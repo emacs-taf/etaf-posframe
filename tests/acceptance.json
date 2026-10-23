@@ -139,6 +139,11 @@
    "name": "etaf-posframe-rejects-stack-without-an-anchor",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": ":stack with a cell or a pixel position signals etaf-posframe-error instead of silently ignoring it."
+  },
+  {
+   "name": "etaf-posframe-registered-apps-open-with-one-call",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Two registered applications open in their own panels with one call each, keep their shortcut keys and close independently."
   }
  ]
 }

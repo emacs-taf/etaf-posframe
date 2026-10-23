@@ -12,6 +12,10 @@
 - Closing a focused panel hands the window system's input focus back to the
   frame it was opened from.  `select-frame' alone left macOS without a key
   window, so the next command froze until the user clicked the parent frame.
+- Applications register once with `etaf-posframe-register-app' and open with one
+  `etaf-posframe-app' call; `etaf-posframe-app-prefix' dispatches the registered
+  shortcuts, so a caller writes one line per application instead of its own
+  command, session bookkeeping and repeat guard.
 - A dark panel paints the flat near-black surface family that dark
   applications use (the NetEase player's `#191a1c`), so a panel and such an
   application read as one design; the frame paint matches the canvas, so no

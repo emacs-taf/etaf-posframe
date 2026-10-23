@@ -507,5 +507,40 @@ command after a close used to freeze."
                 (should-error (apply #'etaf-posframe-show view options)
                               :type 'etaf-posframe-error)))))))
 
+(ert-deftest etaf-posframe-registered-apps-open-with-one-call ()
+  "A registered application opens and closes with one call, next to others."
+  (skip-unless (display-graphic-p))
+  (let ((saved-apps etaf-posframe-apps)
+        (saved-map etaf-posframe-app-map)
+        (first nil)
+        (second nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-register-app 'test-one
+                                      :title "One" :key "1"
+                                      :create #'ignore
+                                      :view (lambda (_session) (etaf-view (text "one")))
+                                      :width 20 :height 2)
+          (etaf-posframe-register-app 'test-two
+                                      :title "Two" :key "2"
+                                      :create #'ignore
+                                      :view (lambda (_session) (etaf-view (text "two")))
+                                      :width 20 :height 2)
+          (should (commandp (lookup-key etaf-posframe-app-map "1")))
+          (should (commandp (lookup-key etaf-posframe-app-map "2")))
+          (setq first (etaf-posframe-app 'test-one)
+                second (etaf-posframe-app 'test-two))
+          (should (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p second))
+          (should-not (eq (etaf-posframe-panel-frame first)
+                          (etaf-posframe-panel-frame second)))
+          (should-not (etaf-posframe-app 'test-one))
+          (should-not (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p second)))
+      (ignore-errors (etaf-posframe-hide second))
+      (ignore-errors (etaf-posframe-hide first))
+      (setq etaf-posframe-apps saved-apps
+            etaf-posframe-app-map saved-map))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

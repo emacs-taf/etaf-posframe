@@ -108,6 +108,49 @@
 ;; theme callback.  A panel also re-fits automatically when its host frame
 ;; changes size.  Return non-nil when PANEL is live.
 ;;
+;; Function: etaf-posframe-register-app (id &rest options)
+;;;###autoload (autoload 'etaf-posframe-register-app "etaf-posframe" nil t)
+;; Register an ETAF application as a floating panel, so callers open it with one
+;; call instead of writing their own command.  ID is a symbol naming the
+;; application.  OPTIONS is a plist:
+;;
+;;   :title      Human name, used as the header when `:header' is absent.
+;;   :create     Function returning a fresh session for the application.
+;;   :view       Function taking that session and returning its View.
+;;   :width      Columns; default `etaf-posframe-default-width'.
+;;   :height     Row budget; default `etaf-posframe-default-max-height'.
+;;   :at         Placement, default 'frame-top-right.
+;;   :stack      Stack below the panels already there, default t.
+;;   :header     Header text; default `:title'.
+;;   :focusable  Give the panel the keyboard, default t.
+;;   :key        A key string that `etaf-posframe-app-map' binds to this app.
+;;   :require    Feature to load before creating a session, when the package is
+;;               not loaded yet.
+;;
+;; Registering the same ID again replaces its record and its key binding.  Each
+;; open creates a session from `:create', so a closed panel leaves nothing
+;; running.
+;;
+;; Function: etaf-posframe-app (id)
+;;;###autoload (autoload 'etaf-posframe-app "etaf-posframe" nil t)
+;; Open ID's panel, or close it when it is already open.  Interactively with no
+;; ID it prompts among the registered applications.  Opening mounts the whole
+;; application, so a repeat within `etaf-posframe-app-repeat-delay' seconds is
+;; ignored.
+;;
+;; Function: etaf-posframe-app-prefix ()
+;;;###autoload (autoload 'etaf-posframe-app-prefix "etaf-posframe" nil t)
+;; Read one key and open the registered application bound to it.  Bind this once,
+;; for example to (kbd "C-c p"), and every registration's `:key' works without
+;; the caller rebuilding a keymap.
+;;
+;; Variable: etaf-posframe-apps
+;; Registered applications as (ID . PLIST) records, in registration order.
+;;
+;; Variable: etaf-posframe-app-map
+;; Keymap with one binding per registered `:key', for callers that prefer to
+;; bind the map itself.
+;;
 ;; Function: etaf-posframe-panel-frame (panel)
 ;; Return PANEL's child frame, or nil when PANEL is not live.
 ;; Read or compare the frame with this instead of reaching into package
@@ -323,7 +366,9 @@ result is a literal token plist accepted by `etaf-theme-provide'."
                                         etaf-posframe-dark-shade)
                   (etaf-posframe--mix bg "#000000"
                                       etaf-posframe-surface-lift)))
-         (border (etaf-posframe--mix panel fg 0.30))
+         ;; A hairline, not a frame: enough to separate the surface from the
+         ;; buffer, light enough not to read as a drawn box.
+         (border (etaf-posframe--mix panel fg 0.16))
          (muted (etaf-posframe--mix fg panel 0.42))
          (accent (or (etaf-posframe--color
                       (ignore-errors (face-attribute 'link :foreground nil frame)))
@@ -529,33 +574,41 @@ parent's scroll bar or window border."
 
 (defun etaf-posframe--stacking-poshandler (at)
   "Return a poshandler placing the panel at AT, clear of live panels.
-Panels opened at the same anchor stack in order: downward from a top or centre
-anchor, upward from a bottom one, leaving `etaf-posframe--stack-gap' between
-them."
+Panels opened at the same anchor tile in order: down a column from a top or
+centre anchor (up from a bottom one), then a column to the left when the frame
+runs out of room, never outside the frame."
   (let* ((base (etaf-posframe--poshandler at))
          (place (cadr (split-string (symbol-name at) "-")))
          (down (not (and place (string-prefix-p "bottom" place)))))
     (lambda (info)
       (let* ((position (funcall base info))
-             (x (car position))
-             (y (cdr position))
+             (x0 (car position))
+             (y0 (cdr position))
              (width (or (plist-get info :posframe-width) 0))
              (height (or (plist-get info :posframe-height) 0))
-             (rect (list x y width height))
+             (step (+ height etaf-posframe--stack-gap))
+             (frame-rect (etaf-posframe--rect info 'frame))
+             (left (nth 0 frame-rect))
+             (top (nth 1 frame-rect))
+             (bottom (nth 3 frame-rect))
              (others (delq nil (mapcar (lambda (panel)
                                          (etaf-posframe--frame-rect
                                           (etaf-posframe--panel-frame panel)))
                                        (etaf-posframe-panels))))
-             (step (* (if down 1 -1) (+ height etaf-posframe--stack-gap)))
-             (tries 0))
-        (while (and (< tries 20)
-                    (cl-some (lambda (other)
-                               (etaf-posframe--rect-overlap-p rect other))
-                             others))
-          (setq y (+ y step)
-                rect (list x y width height)
-                tries (1+ tries)))
-        (cons x y)))))
+             (per-column (max 1 (floor (/ (- bottom top) (float step))))))
+        (cl-loop for slot from 0 below 60
+                 for column = (/ slot per-column)
+                 for row = (% slot per-column)
+                 for x = (max left (- x0 (* column (+ width etaf-posframe--stack-gap))))
+                 for y = (+ y0 (* (if down 1 -1) row step))
+                 for rect = (list x y width height)
+                 when (and (>= y top)
+                           (<= (+ y height) bottom)
+                           (not (cl-some (lambda (other)
+                                           (etaf-posframe--rect-overlap-p rect other))
+                                         others)))
+                 return (cons x y)
+                 finally return (cons x0 y0))))))
 
 (defun etaf-posframe--cell-poshandler (cell)
   "Return a poshandler that puts the panel at CELL, a (ROW . COLUMN) pair.
@@ -1243,6 +1296,119 @@ non-nil when PANEL is live."
 (defun etaf-posframe-panels ()
   "Return the live panels, most recent first."
   (cl-remove-if-not #'etaf-posframe-live-p etaf-posframe--panels))
+
+;;; Applications
+
+(defcustom etaf-posframe-app-repeat-delay 0.3
+  "Seconds during which a repeated app toggle is ignored.
+Opening a panel mounts a whole application, so key repeat would otherwise mount
+it once per repeat and stall Emacs."
+  :type 'number
+  :group 'etaf-posframe)
+
+(defvar etaf-posframe-apps nil
+  "Registered applications, a list of (ID . PLIST) in registration order.")
+
+(defvar etaf-posframe-app-map (make-sparse-keymap)
+  "Keymap with one binding per registered application `:key'.")
+
+(defvar etaf-posframe--app-panels (make-hash-table :test #'eq)
+  "Live panel of each registered application, by ID.")
+
+(defvar etaf-posframe--app-toggled-at (make-hash-table :test #'eq)
+  "Time of each application's last real toggle, for the repeat guard.")
+
+(defun etaf-posframe-app-record (id)
+  "Return the registration plist of application ID."
+  (or (cdr (assq id etaf-posframe-apps))
+      (signal 'etaf-posframe-error
+              (list (format "Application %s is not registered" id)))))
+
+(defun etaf-posframe--app-keymap ()
+  "Return a keymap binding every registered application `:key'."
+  (let ((map (make-sparse-keymap)))
+    (dolist (entry etaf-posframe-apps)
+      (let ((id (car entry))
+            (key (plist-get (cdr entry) :key)))
+        (when key
+          (define-key map (kbd key)
+                      (lambda () (interactive) (etaf-posframe-app id))))))
+    map))
+
+;;;###autoload
+(defun etaf-posframe-register-app (id &rest options)
+  "Register application ID with OPTIONS, as described in the package Commentary."
+  (unless (symbolp id)
+    (signal 'etaf-posframe-error (list "Application ID must be a symbol" id)))
+  (unless (plist-get options :create)
+    (signal 'etaf-posframe-error
+            (list (format "Application %s needs :create" id))))
+  (unless (plist-get options :view)
+    (signal 'etaf-posframe-error
+            (list (format "Application %s needs :view" id))))
+  ;; Registering again replaces the record but keeps the order.
+  (setq etaf-posframe-apps
+        (append (assq-delete-all id etaf-posframe-apps)
+                (list (cons id options)))
+        etaf-posframe-app-map (etaf-posframe--app-keymap))
+  id)
+
+;;;###autoload
+(defun etaf-posframe-app-prefix ()
+  "Read one key and open the registered application bound to it."
+  (interactive)
+  (let* ((keys (read-key-sequence-vector nil t))
+         (command (and keys (lookup-key etaf-posframe-app-map keys))))
+    (if (commandp command)
+        (call-interactively command)
+      (signal 'etaf-posframe-error
+              (list (format "No ETAF application on %s"
+                            (if keys (key-description keys) "no key")))))))
+
+;;;###autoload
+(defun etaf-posframe-app (id)
+  "Open or close the registered application ID's panel.
+Without ID, prompt among the registered applications."
+  (interactive
+   (list (intern (completing-read "ETAF 应用: "
+                                  (mapcar #'car etaf-posframe-apps) nil t))))
+  (let* ((record (etaf-posframe-app-record id))
+         (panel (gethash id etaf-posframe--app-panels))
+         (now (float-time)))
+    (if (etaf-posframe-live-p panel)
+        (progn
+          (puthash id now etaf-posframe--app-toggled-at)
+          (puthash id nil etaf-posframe--app-panels)
+          (etaf-posframe-hide panel)
+          nil)
+      (unless (< (- now (or (gethash id etaf-posframe--app-toggled-at) 0))
+                 etaf-posframe-app-repeat-delay)
+        (puthash id now etaf-posframe--app-toggled-at)
+        (when-let* ((feature (plist-get record :require)))
+          (require feature nil t))
+        (puthash id
+                 (etaf-posframe-show
+                  (funcall (plist-get record :view)
+                           (funcall (plist-get record :create)))
+                  :key id
+                  :at (or (plist-get record :at) 'frame-top-right)
+                  :stack (if (plist-member record :stack)
+                             (plist-get record :stack)
+                           t)
+                  :width (or (plist-get record :width)
+                             etaf-posframe-default-width)
+                  :height (or (plist-get record :height)
+                              etaf-posframe-default-max-height)
+                  :header (or (plist-get record :header)
+                              (plist-get record :title))
+                  :pinned t
+                  :focusable (if (plist-member record :focusable)
+                                 (plist-get record :focusable)
+                               t)
+                  :on-close (lambda (_panel)
+                              (puthash id nil etaf-posframe--app-panels)))
+                 etaf-posframe--app-panels)
+        (gethash id etaf-posframe--app-panels)))))
 
 (provide 'etaf-posframe)
 ;;; etaf-posframe.el ends here

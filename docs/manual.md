@@ -116,6 +116,34 @@ and 0.22 s with 28 MB and a single mount with it.
 Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
 unsupported `:at` signal `etaf-posframe-error` before any frame is created.
 
+## Registering an application
+
+The framework owns the per-application boilerplate: register an application once
+and open its panel with a single call.
+
+```elisp
+(etaf-posframe-register-app 'music
+                            :title "网易云音乐"
+                            :create #'etaf-ncm-create
+                            :view #'etaf-ncm-view
+                            :require 'etaf-ncm
+                            :width 100 :height 24
+                            :key "m"
+                            :at 'frame-top-right :stack t)
+
+(global-set-key (kbd "C-c p") #'etaf-posframe-app-prefix)
+
+(etaf-posframe-app 'music)   ;; or M-x etaf-posframe-app, or C-c p m
+```
+
+A registration records the title, the session factory, the View accessor, the
+size, the placement and an optional shortcut; `etaf-posframe-app` opens or closes
+that application's panel, replacing only its own panel and mounting a fresh
+session each time.  `etaf-posframe-app-prefix` reads one key and dispatches it
+through the registrations, so the caller binds a single prefix and never
+rebuilds a keymap.  Every application registered this way stacks with the
+others: opening the player and then a reader tiles both beside each other.
+
 ## Several panels at once
 
 Panels are independent: each keeps its own child frame, Runtime, Theme, keys and
