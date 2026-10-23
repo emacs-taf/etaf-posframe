@@ -36,10 +36,16 @@
 ;; receives its own Runtime.  The panel follows the current buffer at call time.
 ;; OPTIONS is a plist:
 ;;
-;;   :at         'point (default), 'point-top, 'window-center,
-;;               'window-top-center, 'window-bottom-center,
-;;               'window-top-right, 'window-bottom-right, 'frame-center,
-;;               a cons (X . Y) of absolute pixels, or a poshandler function.
+;;   :at         Placement, default 'point.  `frame-PLACE' puts the panel
+;;               inside the parent frame and `window-PLACE' inside the current
+;;               window's text area, where PLACE is one of top-left,
+;;               top-center, top-right, center-left, center, center-right,
+;;               bottom-left, bottom-center, bottom-right.  `point' and
+;;               `point-top' follow point; a cons (X . Y) is frame pixels and
+;;               a function is a posframe poshandler.
+;;   :cell       (ROW . COLUMN) in character cells, counted from zero at the
+;;               top left of the current window's text area.  Takes precedence
+;;               over `:at'.
 ;;   :width      Content columns, default `etaf-posframe-default-width' and
 ;;               clamped to the parent frame.  Resizing the panel's frame
 ;;               from outside sets the width instead, and the View re-lays
@@ -162,10 +168,38 @@
   "Panel anchored to this buffer, or nil.")
 
 (defun etaf-posframe--parent-killed ()
-  "Hide the panel anchored to the buffer being killed."
-  (when (and etaf-posframe--parent-panel
-             (memq etaf-posframe--parent-panel etaf-posframe--panels))
-    (etaf-posframe-hide etaf-posframe--parent-panel)))
+  "Hide every panel anchored to the buffer being killed."
+  (let ((buffer (current-buffer)))
+    (dolist (panel (copy-sequence (etaf-posframe-panels)))
+      (when (eq (etaf-posframe--panel-parent panel) buffer)
+        (etaf-posframe-hide panel)))))
+
+(defun etaf-posframe--panel-for-frame (frame)
+  "Return the live panel displayed by FRAME, or nil."
+  (cl-find-if (lambda (panel) (eq (etaf-posframe--panel-frame panel) frame))
+              etaf-posframe--panels))
+
+(defun etaf-posframe--anchor-frame (frame)
+  "Return the frame a panel opened from FRAME belongs to.
+A panel frame is itself a child: a new panel belongs to the frame underneath,
+so closing the covering panel cannot delete the new one with it."
+  (if-let* ((panel (etaf-posframe--panel-for-frame frame))
+            (parent (etaf-posframe--panel-parent-frame panel))
+            ((frame-live-p parent)))
+      (etaf-posframe--anchor-frame parent)
+    frame))
+
+(defun etaf-posframe--anchor-buffer (buffer)
+  "Return the buffer a panel opened in BUFFER belongs to.
+A panel whose buffer is current is another panel's surface, possibly shown on
+top of a third; the new panel belongs to the first plain buffer, so closing the
+covering panel cannot take the new panel with it."
+  (let ((panel (and (buffer-live-p buffer)
+                    (buffer-local-value 'etaf-posframe--panel buffer))))
+    (if (and (etaf-posframe--panel-p panel)
+             (buffer-live-p (etaf-posframe--panel-parent panel)))
+        (etaf-posframe--anchor-buffer (etaf-posframe--panel-parent panel))
+      buffer)))
 
 (defvar etaf-posframe-panel-keys
   (let ((map (make-sparse-keymap)))
@@ -290,15 +324,25 @@ result is a literal token plist accepted by `etaf-theme-provide'."
 
 ;;; Options
 
+(defconst etaf-posframe--anchor-places
+  '(top-left top-center top-right
+    center-left center center-right
+    bottom-left bottom-center bottom-right)
+  "Nine places an anchor can name inside its rectangle.")
+
 (defconst etaf-posframe--anchors
-  '(point point-top window-center window-top-center window-bottom-center
-    window-top-right window-bottom-right frame-center frame-top-right
-    frame-bottom-right)
-  "Anchors accepted by `etaf-posframe-show' :at.")
+  (append '(point point-top)
+          (cl-loop for kind in '(frame window)
+                   append (cl-loop for place in etaf-posframe--anchor-places
+                                   collect (intern (format "%s-%s" kind place)))))
+  "Anchors accepted by `etaf-posframe-show' :at.
+`frame-*' names the whole parent frame, `window-*' the parent window's text
+area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
+`point-top' place the panel at point.")
 
 (defconst etaf-posframe--option-keys
-  '(:at :width :height :header :draggable :pinned :focusable :auto-focus
-    :dismiss :timeout :theme :on-close :key)
+  '(:at :cell :width :height :header :draggable :pinned :focusable
+    :auto-focus :dismiss :timeout :theme :on-close :key)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -330,6 +374,12 @@ result is a literal token plist accepted by `etaf-theme-provide'."
                             (numberp (cdr value))))
              (signal 'etaf-posframe-error
                      (list (format "Unsupported panel :at: %S" value)))))
+          (:cell
+           (unless (and (consp value)
+                        (wholenump (car value)) (wholenump (cdr value)))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :cell must be a (ROW . COLUMN) pair of non-negative integers: %S"
+                                   value)))))
           (:on-close
            (unless (or (null value) (functionp value))
              (signal 'etaf-posframe-error
@@ -343,53 +393,85 @@ result is a literal token plist accepted by `etaf-theme-provide'."
         (setq result (plist-put result key value))))
     result))
 
-(defun etaf-posframe--right-corner (info bottom)
-  "Return the top-right or, with BOTTOM, bottom-right corner for INFO.
-Anchor inside the parent window's text area: posframe's corner handlers use
-the frame edge, which overlaps the parent's vertical scroll bar and shows it
-over the panel."
-  (let* ((window (plist-get info :parent-window))
-         (edges (and (window-live-p window) (window-inside-pixel-edges window)))
+(defun etaf-posframe--rect (info kind)
+  "Return (LEFT TOP RIGHT BOTTOM) pixels for anchor KIND.
+KIND is `frame' for the whole parent frame or `window' for the parent window's
+text area."
+  (if (eq kind 'window)
+      (let* ((window (plist-get info :parent-window))
+             (edges (and (window-live-p window)
+                         (window-inside-pixel-edges window))))
+        (or edges (list 0 0 0 0)))
+    (let ((frame (plist-get info :parent-frame)))
+      (list 0 0
+            (or (plist-get info :parent-frame-width)
+                (and (frame-live-p frame) (frame-pixel-width frame))
+                0)
+            (or (plist-get info :parent-frame-height)
+                (and (frame-live-p frame) (frame-pixel-height frame))
+                0)))))
+
+(defun etaf-posframe--anchor-position (info kind place)
+  "Return the pixel position of PLACE inside KIND for INFO.
+The panel keeps a margin to the edge it is anchored to, so it never sits on the
+parent's scroll bar or window border."
+  (let* ((rect (etaf-posframe--rect info kind))
+         (left (nth 0 rect))
+         (top (nth 1 rect))
+         (right (nth 2 rect))
+         (bottom (nth 3 rect))
          (width (or (plist-get info :posframe-width) 0))
          (height (or (plist-get info :posframe-height) 0))
-         (margin 4))
-    (if (null edges)
-        (cons 0 0)
-      (cons (max 0 (- (nth 2 edges) width margin))
-            (if bottom
-                (max 0 (- (nth 3 edges) height margin))
-              (+ (nth 1 edges) margin))))))
+         (margin (if (eq kind 'window) 4 8))
+         (right-edge (max left (- right width margin)))
+         (bottom-edge (max top (- bottom height margin)))
+         (x (pcase place
+              ((or 'top-left 'center-left 'bottom-left) left)
+              ((or 'top-right 'center-right 'bottom-right) right-edge)
+              (_ (max left (/ (- right left width) 2)))))
+         (y (pcase place
+              ((or 'top-left 'top-center 'top-right) (+ top margin))
+              ((or 'bottom-left 'bottom-center 'bottom-right) bottom-edge)
+              (_ (max top (/ (- bottom top height) 2))))))
+    (cons x y)))
+
+(defvar etaf-posframe--anchor-handlers
+  (let (table)
+    (dolist (kind '(frame window))
+      (dolist (place etaf-posframe--anchor-places)
+        (let ((kind kind) (place place))
+          (push (cons (intern (format "%s-%s" kind place))
+                      (lambda (info) (etaf-posframe--anchor-position info kind place)))
+                table))))
+    table)
+  "Poshandler of every symbol in `etaf-posframe--anchors'.")
+
+(defun etaf-posframe--cell-poshandler (cell)
+  "Return a poshandler that puts the panel at CELL, a (ROW . COLUMN) pair.
+Rows and columns count from the top left of the parent window's text area and
+start at zero, so (0 . 0) is its first cell."
+  (lambda (info)
+    (let* ((rect (etaf-posframe--rect info 'window))
+           (row (car cell))
+           (column (cdr cell))
+           (char-width (or (plist-get info :font-width)
+                           (frame-char-width (or (plist-get info :parent-frame)
+                                                 (selected-frame)))))
+           (line-prefix (if (plist-get info :respect-header-line)
+                            (plist-get info :header-line-height)
+                          0))
+           (char-height (or (plist-get info :font-height) 0)))
+      (cons (+ (nth 0 rect) (* column char-width))
+            (+ (nth 1 rect) (* row char-height) (or line-prefix 0))))))
 
 (defun etaf-posframe--poshandler (at)
   "Return the posframe poshandler for anchor AT."
   (pcase at
     ('point #'posframe-poshandler-point-bottom-left-corner-upward)
     ('point-top #'posframe-poshandler-point-top-left-corner)
-    ('window-center #'posframe-poshandler-window-center)
-    ('window-top-center #'posframe-poshandler-window-top-center)
-    ('window-bottom-center #'posframe-poshandler-window-bottom-center)
-    ('window-top-right
-     (lambda (info) (etaf-posframe--right-corner info nil)))
-    ('window-bottom-right
-     (lambda (info) (etaf-posframe--right-corner info t)))
-    ('frame-center #'posframe-poshandler-frame-center)
-    ('frame-top-right
-     (lambda (info)
-       (let* ((parent-frame (plist-get info :parent-frame))
-              (width (or (plist-get info :posframe-width) 0))
-              (margin 8))
-         (cons (max 0 (- (frame-pixel-width parent-frame) width margin))
-               margin))))
-    ('frame-bottom-right
-     (lambda (info)
-       (let* ((parent-frame (plist-get info :parent-frame))
-              (width (or (plist-get info :posframe-width) 0))
-              (height (or (plist-get info :posframe-height) 0))
-              (margin 8))
-         (cons (max 0 (- (frame-pixel-width parent-frame) width margin))
-               (max 0 (- (frame-pixel-height parent-frame) height margin))))))
     ((pred functionp) at)
-    (_ (signal 'etaf-posframe-error (list "Unsupported panel :at" at)))))
+    (_ (or (cdr (assq at etaf-posframe--anchor-handlers))
+           (signal 'etaf-posframe-error (list "Unsupported panel :at" at))))))
 
 (defun etaf-posframe--draggable-p (options)
   "Return non-nil when OPTIONS make the panel draggable."
@@ -532,9 +614,11 @@ over the panel."
               (snap-width . 12))
             (when (etaf-posframe--draggable-p options)
               '((drag-with-header-line . t)))))
-     (if (and (consp at) (numberp (car at)) (numberp (cdr at)))
-         (list :position at)
-       (list :poshandler (etaf-posframe--poshandler at))))))
+     (if-let* ((cell (plist-get options :cell)))
+         (list :poshandler (etaf-posframe--cell-poshandler cell))
+       (if (and (consp at) (numberp (car at)) (numberp (cdr at)))
+           (list :position at)
+         (list :poshandler (etaf-posframe--poshandler at)))))))
 
 (defun etaf-posframe--fit (panel)
   "Fit PANEL's Runtime to WINDOW's frame width and its body height.
@@ -632,7 +716,8 @@ Re-fit once when the settled window width changes the content height."
         (restore (etaf-posframe--panel-restore-frame panel)))
     (when (buffer-live-p parent)
       (with-current-buffer parent
-        (remove-hook 'kill-buffer-hook #'etaf-posframe--parent-killed t)
+        (unless (etaf-posframe--panel-for-buffer parent)
+          (remove-hook 'kill-buffer-hook #'etaf-posframe--parent-killed t))
         (when (eq etaf-posframe--parent-panel panel)
           (setq etaf-posframe--parent-panel nil))))
     (when (and (frame-live-p restore)
@@ -752,10 +837,20 @@ VIEW is a View or a zero-argument function returning one.  OPTIONS is the plist
 described in the package Commentary."
   (unless (or (functionp view) view)
     (signal 'etaf-posframe-error (list "Panel View is nil")))
+  ;; A new panel belongs to the frame the user is working in.  When a panel has
+  ;; focus, its child frame is selected, and parenting the new panel to it would
+  ;; delete the new panel together with the covering one.  Keep the caller's
+  ;; buffer as the anchor, not the buffer the outer window happens to show.
+  (let* ((called-buffer (current-buffer))
+         (anchor-frame (etaf-posframe--anchor-frame (selected-frame))))
+    (when (and (frame-live-p anchor-frame)
+               (not (eq anchor-frame (selected-frame))))
+      (select-frame anchor-frame)
+      (set-buffer called-buffer)))
   (let* ((options (etaf-posframe--default-dismiss
                    (etaf-posframe--validate (copy-sequence options))))
          (parent-frame (selected-frame))
-         (parent-buffer (current-buffer))
+         (parent-buffer (etaf-posframe--anchor-buffer (current-buffer)))
          (char-width (frame-char-width parent-frame))
          (available (max 20 (- (/ (frame-pixel-width parent-frame) char-width)
                                (* 2 etaf-posframe--margin))))

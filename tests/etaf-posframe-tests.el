@@ -138,6 +138,20 @@
     (should (= 1 (length frames)))
     (car frames)))
 
+(defun etaf-posframe-tests--placement (parent columns lines &rest options)
+  "Show a COLUMNS x LINES panel with OPTIONS in PARENT.
+Return a plist with the frame `:at' offset and its `:size'; the frame shrinks to
+its content, so its height is not the requested line count."
+  (let ((panel (apply #'etaf-posframe-show (etaf-view (text "x"))
+                      :width columns :height lines options)))
+    (unwind-protect
+        (let ((frame (etaf-posframe-tests--panel-frame parent)))
+          (list :at (cons (frame-parameter frame 'left)
+                          (frame-parameter frame 'top))
+                :size (cons (frame-pixel-width frame)
+                            (frame-pixel-height frame))))
+      (etaf-posframe-hide panel))))
+
 (defun etaf-posframe-tests--panel-window (frame)
   "Return the window FRAME shows its panel in."
   (frame-root-window frame))
@@ -322,6 +336,99 @@ slot made that print follow a cycle until Emacs ran out of memory."
           (should-not (etaf-posframe-live-p first))
           (should (etaf-posframe-live-p second)))
       (ignore-errors (etaf-posframe-hide second)))))
+
+(ert-deftest etaf-posframe-anchors-place-panels-in-the-grid ()
+  "Frame and window anchors put a panel at the expected place."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (selected-frame))
+         (frame-width (frame-pixel-width parent))
+         (frame-height (frame-pixel-height parent))
+         (edges (window-inside-pixel-edges (selected-window)))
+         (margin 8)
+         (window-margin 4))
+    (cl-labels ((at-of (anchor)
+                  (plist-get (etaf-posframe-tests--placement
+                              parent 20 2 :at anchor)
+                             :at))
+                (size-of (anchor)
+                  (plist-get (etaf-posframe-tests--placement
+                              parent 20 2 :at anchor)
+                             :size)))
+      (let ((size (size-of 'frame-top-left)))
+        (should (equal (at-of 'frame-top-left) (cons 0 margin)))
+        (should (equal (at-of 'frame-top-right)
+                       (cons (- frame-width (car size) margin) margin)))
+        (should (equal (at-of 'frame-bottom-right)
+                       (cons (- frame-width (car size) margin)
+                             (- frame-height (cdr size) margin))))
+        (should (equal (at-of 'frame-center)
+                       (cons (/ (- frame-width (car size)) 2)
+                             (/ (- frame-height (cdr size)) 2))))
+        (should (equal (at-of 'frame-center-left)
+                       (cons 0 (/ (- frame-height (cdr size)) 2))))
+        (should (equal (at-of 'window-top-left)
+                       (cons (nth 0 edges) (+ (nth 1 edges) window-margin))))
+        (should (equal (at-of 'window-bottom-right)
+                       (cons (- (nth 2 edges) (car size) window-margin)
+                             (- (nth 3 edges) (cdr size) window-margin))))))))
+
+(ert-deftest etaf-posframe-cell-places-a-panel-at-character-cells ()
+  "A :cell pair lands on the same cell whatever the panel size."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (selected-frame))
+         (edges (window-inside-pixel-edges (selected-window)))
+         (char-width (frame-char-width parent))
+         (char-height (frame-char-height parent))
+         (origin (cons (nth 0 edges) (nth 1 edges))))
+    (should (equal (plist-get (etaf-posframe-tests--placement
+                               parent 20 2 :cell '(0 . 0))
+                              :at)
+                   origin))
+    (should (equal (plist-get (etaf-posframe-tests--placement
+                               parent 30 4 :cell '(0 . 0))
+                              :at)
+                   origin))
+    (should (equal (plist-get (etaf-posframe-tests--placement
+                               parent 20 2 :cell '(3 . 5))
+                              :at)
+                   (cons (+ (car origin) (* 5 char-width))
+                         (+ (cdr origin) (* 3 char-height)))))))
+
+(ert-deftest etaf-posframe-rejects-a-bad-cell ()
+  "A :cell that is not a pair of non-negative integers signals an error."
+  (let ((view (etaf-view (text "x"))))
+    (dolist (cell '((-1 . 2) (1.5 . 2) 3 ("a" . 1)))
+      (should (string-match-p
+               ":cell"
+               (error-message-string
+                (should-error (etaf-posframe-show view :cell cell)
+                              :type 'etaf-posframe-error)))))))
+
+(ert-deftest etaf-posframe-panel-opened-in-a-panel-is-independent ()
+  "A panel opened while another panel has focus outlives that panel."
+  (skip-unless (display-graphic-p))
+  (let* ((buffer (get-buffer-create " *etaf-posframe-test-owner*"))
+         (first nil)
+         (second nil))
+    (unwind-protect
+        (with-current-buffer buffer
+          (setq first (etaf-posframe-show (etaf-view (text "first"))
+                                          :key 'first :width 24 :height 2
+                                          :focusable t))
+          ;; The first panel is focused now, so its buffer is current: the
+          ;; second panel would otherwise belong to it and die with it.
+          (setq second (etaf-posframe-show (etaf-view (text "second"))
+                                           :key 'second :width 24 :height 2))
+          (should (= 2 (length (etaf-posframe-panels))))
+          (etaf-posframe-hide first)
+          (should-not (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p second))
+          (kill-buffer buffer)
+          (should-not (etaf-posframe-live-p second))
+          (should-not (etaf-posframe-panels)))
+      (ignore-errors (etaf-posframe-hide second))
+      (ignore-errors (etaf-posframe-hide first))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

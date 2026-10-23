@@ -95,7 +95,8 @@ and 0.22 s with 28 MB and a single mount with it.
 
 | Option | Meaning |
 | --- | --- |
-| `:at` | `'point` (default), `'point-top`, window anchors, `'frame-top-right`, `'frame-bottom-right`, `'frame-center`, an absolute `(X . Y)` pixel pair, or a Posframe poshandler. |
+| `:at` | Placement.  `frame-PLACE` inside the parent frame, `window-PLACE` inside the current window's text area, `point` (default), `point-top`, a `(X . Y)` pixel pair, or a Posframe poshandler. |
+| `:cell` | Absolute `(ROW . COLUMN)` in character cells from the top left of the window's text area, counted from zero.  Wins over `:at`. |
 | `:width` | Content columns.  Defaults to `etaf-posframe-default-width`, clamped to the parent frame. |
 | `:height` | Maximum content lines.  Taller content clips; the frame still shrinks to the content. |
 | `:header` | Header line text.  Without it the panel has no header line and cannot be dragged. |
@@ -129,6 +130,36 @@ replace each other, which is what a preview panel wants.  Give an application
 panel a key: otherwise opening another keyless panel replaces it.
 `etaf-posframe-panels` lists everything alive, `etaf-posframe-hide` closes one
 of them, and `etaf-posframe-toggle` with a key only touches that key's panel.
+
+## Placement
+
+`:at` names a rectangle and a place inside it.  The rectangle is the parent
+frame (`frame-`) or the current window's text area (`window-`); the place is one
+of nine:
+
+```text
+top-left       top-center       top-right
+center-left    center           center-right
+bottom-left    bottom-center    bottom-right
+```
+
+so `frame-center` is the middle of the frame, `window-top-right` the top right
+of the window's text area, `window-center-left` the middle of its left edge.
+The panel keeps a margin to the edge it is anchored to (8 px inside the frame, 4
+px inside the window), so it never sits on the parent's scroll bar or border.
+`point` (the default) and `point-top` follow point, a `(X . Y)` cons is frame
+pixels, and a function is a Posframe poshandler.
+
+`:cell` places the panel at an absolute character cell:
+
+```elisp
+(etaf-posframe-show view :cell '(0 . 0))   ;; first cell of the window
+(etaf-posframe-show view :cell '(3 . 5))   ;; fourth row, sixth column
+```
+
+Rows and columns count from zero at the top left of the window's text area and
+follow the parent frame's character metrics, so the same `:cell` lands on the
+same cell whatever the panel's own size is.  `:cell` wins over `:at`.
 
 ## Lifecycle and ownership
 

@@ -99,6 +99,26 @@
    "name": "etaf-posframe-toggle-targets-its-key",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "Toggle hides the panel of its own key and leaves the panels of other keys open."
+  },
+  {
+   "name": "etaf-posframe-anchors-place-panels-in-the-grid",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Frame and window anchors place a panel at the named corner, edge centre or centre of their rectangle."
+  },
+  {
+   "name": "etaf-posframe-cell-places-a-panel-at-character-cells",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A :cell pair places the panel at the same character cell regardless of the panel size."
+  },
+  {
+   "name": "etaf-posframe-rejects-a-bad-cell",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A :cell that is not a pair of non-negative integers signals etaf-posframe-error naming the option."
+  },
+  {
+   "name": "etaf-posframe-panel-opened-in-a-panel-is-independent",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel shown while another panel has focus belongs to the underlying buffer and survives that first panel."
   }
  ]
 }
