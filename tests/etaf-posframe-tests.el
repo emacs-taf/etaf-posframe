@@ -568,7 +568,9 @@ command after a close used to freeze."
       (ignore-errors (select-frame-set-input-focus origin)))))
 
 (ert-deftest etaf-posframe-focus-shows-in-the-border ()
-  "The panel holding the input focus paints its border in the accent colour."
+  "The focused panel paints its border differently from the resting ones.
+The accent follows the selection, so selecting a panel or the frame behind them
+switches it without running any panel command."
   (skip-unless (display-graphic-p))
   (let ((origin (etaf-posframe-tests--top-frame)))
     (unless (eq (selected-frame) origin)
@@ -579,30 +581,34 @@ command after a close used to freeze."
            (second (etaf-posframe-show (etaf-view (text "second"))
                                        :key 'border-two :width 24 :height 2
                                        :pinned t :focusable t))
-           (palette (etaf-posframe-theme origin))
-           (accent (plist-get palette :ui-accent))
-           (resting (plist-get palette :ui-panel-border)))
+           (colour (lambda (panel)
+                     (face-attribute 'child-frame-border :background
+                                     (etaf-posframe-panel-frame panel)))))
       (unwind-protect
-          ;; Exactly one panel holds the focus at a time, and its border is
-          ;; painted differently from the others.
-          (dotimes (_ 3)
-            (etaf-posframe-cycle)
-            (with-timeout (2 nil) (sleep-for 0.1))
-            (let* ((selected (selected-frame))
-                   (colours (mapcar (lambda (panel)
-                                      (cons (eq selected
-                                                (etaf-posframe-panel-frame panel))
-                                            (face-attribute
-                                             'child-frame-border :background
-                                             (etaf-posframe-panel-frame panel))))
-                                    (list first second))))
-              ;; Up to one panel holds the focus; the step that returns to the
-              ;; frame behind them leaves every panel resting.
-              (should (<= (length (seq-filter #'car colours)) 1))
-              (when (assq t colours)
-                (should-not (equal (cdr (assq t colours))
-                                   (cdr (assq nil colours)))))
-              (ignore accent resting)))
+          (progn
+            ;; Cycling focuses one panel at a time and its border differs from
+            ;; the panel that does not have the focus.
+            (dotimes (_ 3)
+              (etaf-posframe-cycle)
+              (with-timeout (2 nil) (sleep-for 0.1))
+              (let ((selected (selected-frame)))
+                (when (eq selected (etaf-posframe-panel-frame first))
+                  (should-not (equal (funcall colour first)
+                                     (funcall colour second))))
+                (when (eq selected (etaf-posframe-panel-frame second))
+                  (should-not (equal (funcall colour first)
+                                     (funcall colour second))))))
+            ;; Selecting a frame like a click does, then running a command,
+            ;; moves the accent on its own: on the frame behind them both
+            ;; panels look the same, on a panel it differs again.
+            (select-frame origin)
+            (run-hooks 'post-command-hook)
+            (should (equal (funcall colour first) (funcall colour second)))
+            (let ((resting (funcall colour second)))
+              (select-frame (etaf-posframe-panel-frame first))
+              (run-hooks 'post-command-hook)
+              (should-not (equal resting (funcall colour first)))
+              (should (equal resting (funcall colour second)))))
         (ignore-errors (etaf-posframe-hide second))
         (ignore-errors (etaf-posframe-hide first))
         (ignore-errors (select-frame-set-input-focus origin))))))

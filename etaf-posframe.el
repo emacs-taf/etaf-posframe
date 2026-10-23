@@ -705,6 +705,9 @@ start at zero, so (0 . 0) is its first cell."
   (if (cl-some #'etaf-posframe--auto-panel-p etaf-posframe--panels)
       (add-hook 'pre-command-hook #'etaf-posframe--pre-command)
     (remove-hook 'pre-command-hook #'etaf-posframe--pre-command))
+  (if etaf-posframe--panels
+      (add-hook 'post-command-hook #'etaf-posframe--follow-focus)
+    (remove-hook 'post-command-hook #'etaf-posframe--follow-focus))
   (if (cl-some (lambda (panel)
                  (memq (plist-get (etaf-posframe--panel-options panel) :dismiss)
                        '(auto focus-out)))
@@ -928,10 +931,22 @@ Re-fit once when the settled window width changes the content height."
                                'internal-border)
                              color frame)))))
 
+(defvar etaf-posframe--painted-focus nil
+  "Frame the panel borders were last painted for.")
+
 (defun etaf-posframe--paint-borders ()
   "Refresh the focus border of every live panel."
+  (setq etaf-posframe--painted-focus (selected-frame))
   (dolist (panel etaf-posframe--panels)
     (ignore-errors (etaf-posframe--paint-border panel))))
+
+(defun etaf-posframe--follow-focus ()
+  "Repaint the borders when the selected frame changed under us.
+Clicking a panel or the frame behind it selects it; that does not always reach
+`after-focus-change-function', so the borders follow the selection after every
+command instead."
+  (unless (eq (selected-frame) etaf-posframe--painted-focus)
+    (etaf-posframe--paint-borders)))
 
 (defun etaf-posframe--top-frame (&optional frame)
   "Return the top level frame above FRAME.
