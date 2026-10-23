@@ -75,6 +75,14 @@
 ;; new panel, or nil when it hid one.  This is the entry for a key binding that
 ;; opens and closes the same panel.
 ;;
+;; Function: etaf-posframe-refresh (&optional panel)
+;;;###autoload (autoload 'etaf-posframe-refresh "etaf-posframe" nil t)
+;; Schedule PANEL to re-lay out at its frame width and fit the frame to the
+;; rendered content.  PANEL defaults to the current buffer's panel.  The fit
+;; is deferred past the current event and render, so it is safe to call from a
+;; Button, a timer or a theme callback.  A panel also re-fits automatically
+;; when its host frame changes size.  Return non-nil when PANEL is live.
+;;
 ;; Function: etaf-posframe-live-p (panel)
 ;; Return non-nil while PANEL's frame exists and its Runtime is mounted.
 ;;
@@ -161,7 +169,7 @@ They close the panel without consulting the View.")
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
   buffer frame runtime parent parent-frame options timer restore-frame focused
-  theme)
+  theme fit-timer)
 
 ;;; Theme
 
@@ -501,21 +509,32 @@ would otherwise narrow the canvas and leave a scroll bar strip on the right."
           (cdr (window-text-pixel-size window nil (point) nil 10000 t))))
     (error nil)))
 
-(defun etaf-posframe--fit-height (panel window)
-  "Resize PANEL's frame to the pixel height of its rendered content.
-Lay the content out without clipping first, then size the frame to it, so a
-row taller than the canonical line is never cut."
+(defun etaf-posframe--resize-to-content (panel window)
+  "Fit PANEL's frame height to WINDOW's rendered rows.
+The measured height is clamped to the row count plus one line of slack, so a
+transient measurement can never stretch the frame into an empty rectangle."
   (let* ((frame (window-frame window))
-         (runtime (etaf-posframe--panel-runtime panel))
+         (buffer (etaf-posframe--panel-buffer panel))
+         (rows (max 1 (etaf-posframe--lines buffer)))
+         (line (frame-char-height frame))
          (header (if (plist-get (etaf-posframe--panel-options panel) :header)
                      (window-header-line-height window)
-                   0)))
+                   0))
+         (height (+ (or (etaf-posframe--text-height panel window) 0) header))
+         (limit (+ (* (1+ rows) line) header 32)))
+    (when (and (> height 0) (<= height limit)
+               (> (abs (- height (frame-pixel-height frame))) 1))
+      (set-frame-size frame (frame-pixel-width frame) height t))))
+
+(defun etaf-posframe--fit-height (panel window)
+  "Lay PANEL's content out without clipping, then fit the frame to it."
+  (let* ((frame (window-frame window))
+         (runtime (etaf-posframe--panel-runtime panel)))
     (etaf-runtime-refit runtime (frame-pixel-width frame) 400)
-    (let ((height (+ (etaf-posframe--text-height panel window) header)))
-      (when (> height 0)
-        (set-frame-size frame (frame-pixel-width frame) height t))
-      (etaf-runtime-refit runtime (frame-pixel-width frame) nil))
-    (etaf-posframe--fit panel (or (get-buffer-window (etaf-posframe--panel-buffer panel) t)
+    (etaf-posframe--resize-to-content panel window)
+    (etaf-runtime-refit runtime (frame-pixel-width frame) nil)
+    (etaf-posframe--fit panel (or (get-buffer-window
+                                   (etaf-posframe--panel-buffer panel) t)
                                   window))))
 
 (defun etaf-posframe--show-frame (panel lines)
@@ -562,6 +581,9 @@ Re-fit once when the settled window width changes the content height."
     (when-let* ((timer (etaf-posframe--panel-timer panel)))
       (cancel-timer timer)
       (setf (etaf-posframe--panel-timer panel) nil))
+    (when-let* ((timer (etaf-posframe--panel-fit-timer panel)))
+      (cancel-timer timer)
+      (setf (etaf-posframe--panel-fit-timer panel) nil))
     (when (buffer-live-p buffer)
       (ignore-errors (posframe-hide buffer)))
     (when (buffer-live-p buffer)
@@ -633,6 +655,7 @@ panel was hidden."
   (run-at-time 0.1 nil #'etaf-posframe--apply-theme))
 
 (add-hook 'enable-theme-functions #'etaf-posframe--theme-changed)
+(add-hook 'window-size-change-functions #'etaf-posframe--window-size-changed)
 
 (defun etaf-posframe--panel-for-buffer (buffer)
   "Return the live panel anchored to BUFFER."
@@ -753,6 +776,43 @@ Return the new panel, or nil when it hid one."
     (apply #'etaf-posframe-show view options)))
 
 ;;;###autoload
+(defun etaf-posframe--fit-now (panel)
+  "Re-lay out PANEL at its frame width and fit the frame to the content.
+Runs outside render and event callbacks; it never touches the buffer."
+  (when (etaf-posframe-live-p panel)
+    (let* ((buffer (etaf-posframe--panel-buffer panel))
+           (window (get-buffer-window buffer t))
+           (frame (etaf-posframe--panel-frame panel)))
+      (when (window-live-p window)
+        (etaf-runtime-refit (etaf-posframe--panel-runtime panel)
+                          (frame-pixel-width frame) nil)
+        (etaf-posframe--resize-to-content panel window)))))
+
+;;;###autoload
+(defun etaf-posframe-refresh (&optional panel)
+  "Schedule PANEL to fit its frame after the current event finishes.
+PANEL defaults to the current buffer's panel.  Call it after the View's
+content or style changed, or after the frame was resized; the fit itself is
+deferred so it never runs inside a render or an event callback.  Return
+non-nil when PANEL is live."
+  (interactive)
+  (let ((panel (or panel (etaf-posframe--current-panel))))
+    (when (etaf-posframe-live-p panel)
+      (when-let* ((timer (etaf-posframe--panel-fit-timer panel)))
+        (cancel-timer timer))
+      (setf (etaf-posframe--panel-fit-timer panel)
+            (run-at-time 0.05 nil
+                         (lambda ()
+                           (setf (etaf-posframe--panel-fit-timer panel) nil)
+                           (ignore-errors (etaf-posframe--fit-now panel)))))
+      t)))
+
+(defun etaf-posframe--window-size-changed (frame)
+  "Re-fit panels hosted by FRAME after its size changed."
+  (dolist (panel (copy-sequence etaf-posframe--panels))
+    (when (eq (etaf-posframe--panel-parent-frame panel) frame)
+      (etaf-posframe-refresh panel))))
+
 (defun etaf-posframe-panel-theme (panel)
   "Return PANEL's current Theme plist, or nil when it is not live."
   (when (etaf-posframe-live-p panel)

@@ -47,9 +47,6 @@
 (defvar etaf-pomodoro--panel nil
   "Open panel, or nil.")
 
-(defvar etaf-pomodoro--rebuilding nil
-  "Non-nil while the panel is rebuilt for another style.")
-
 (defun etaf-pomodoro--clock (seconds)
   "Format SECONDS as MM:SS."
   (format "%02d:%02d" (/ seconds 60) (% seconds 60)))
@@ -95,7 +92,8 @@
            (next (car (or (cdr (memq (etaf-value style)
                                       etaf-pomodoro--styles))
                           etaf-pomodoro--styles))))
-      (etaf-pomodoro--rebuild next))))
+      (etaf-batch (setf (etaf-value style) next))
+      (etaf-posframe-refresh etaf-pomodoro--panel))))
 
 (defun etaf-pomodoro--tick ()
   "Advance the countdown by one second while running."
@@ -255,38 +253,13 @@
    :focusable t
    :on-close #'etaf-pomodoro--close))
 
-(defun etaf-pomodoro--rebuild (style)
-  "Rebuild the panel in STYLE at its current position.
-A panel's size is settled when it opens, so another style needs a new panel.
-The countdown carries over and the refs are recreated with the new Runtime."
-  (let* ((state etaf-pomodoro--state)
-         (panel etaf-pomodoro--panel)
-         (frame (and (etaf-posframe-live-p panel)
-                     (etaf-posframe--panel-frame panel)))
-         (position (and frame (cons (frame-parameter frame 'left)
-                                    (frame-parameter frame 'top))))
-         (remaining (etaf-value (plist-get state :remaining)))
-         (total (etaf-value (plist-get state :total)))
-         (running (etaf-value (plist-get state :running))))
-    (when panel
-      (let ((etaf-pomodoro--rebuilding t))
-        (etaf-posframe-hide panel)))
-    (setq etaf-pomodoro--state
-          (list :remaining (etaf-ref remaining)
-                :total (etaf-ref total)
-                :running (etaf-ref running)
-                :style (etaf-ref style)))
-    (setq etaf-pomodoro--panel
-          (etaf-pomodoro--open etaf-pomodoro--state position))))
-
 (defun etaf-pomodoro--close (&optional _panel)
   "Stop the tick timer and forget the panel."
-  (unless etaf-pomodoro--rebuilding
-    (when (timerp etaf-pomodoro--timer)
-      (cancel-timer etaf-pomodoro--timer))
-    (setq etaf-pomodoro--timer nil
-          etaf-pomodoro--state nil
-          etaf-pomodoro--panel nil)))
+  (when (timerp etaf-pomodoro--timer)
+    (cancel-timer etaf-pomodoro--timer))
+  (setq etaf-pomodoro--timer nil
+        etaf-pomodoro--state nil
+        etaf-pomodoro--panel nil))
 
 ;;;###autoload
 (defun etaf-pomodoro-start (&optional minutes)
