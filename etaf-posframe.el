@@ -909,7 +909,12 @@ already has is what turns one resize into a stream of size-change hooks."
   "Show PANEL's frame for LINES of content and return its frame.
 Re-fit once when the settled window width changes the content height."
   (let* ((budget (etaf-posframe--row-budget panel))
-         (lines (max 1 (min lines budget)))
+         ;; A filled panel is created at its full height, so the poshandler
+         ;; places the stage it will keep instead of the one-row frame a short
+         ;; View produces before the fit.
+         (lines (max 1 (if (plist-get (etaf-posframe--panel-options panel) :fill)
+                           budget
+                         (min lines budget))))
          (args (etaf-posframe--frame-args panel lines))
          (buffer (etaf-posframe--panel-buffer panel)))
     (apply #'posframe-show buffer args)
@@ -932,6 +937,17 @@ Re-fit once when the settled window width changes the content height."
         (signal 'etaf-posframe-error (list "Panel frame did not appear" buffer)))
       (set-window-scroll-bars window 0 nil nil)
       (etaf-posframe--fit-height panel window)
+      ;; The poshandler ran while the fresh frame still had its one-row size,
+      ;; so a vertical anchor would be off by the difference.  Show once more
+      ;; with the settled height: posframe then places the frame it will keep.
+      (let ((settled (+ (window-body-height window)
+                        (if (plist-get (etaf-posframe--panel-options panel) :header)
+                            1
+                          0))))
+        (unless (= settled lines)
+          (apply #'posframe-show buffer
+                 (plist-put (copy-sequence args) :height settled))
+          (etaf-posframe--fit-height panel window)))
       (window-frame window))))
 
 (defun etaf-posframe--border-color (panel focused)
@@ -1434,6 +1450,21 @@ it once per repeat and stall Emacs."
 (defvar etaf-posframe--app-toggled-at (make-hash-table :test #'eq)
   "Time of each application's last real toggle, for the repeat guard.")
 
+(defconst etaf-posframe--app-options
+  '(:at :stack :width :height :header :focusable :auto-focus :dismiss :timeout
+    :theme :border-width :border-color :focus-border-color :fill :offset)
+  "Registration keys handed to `etaf-posframe-show' unchanged.")
+
+(defun etaf-posframe--app-show-options (record)
+  "Return the `etaf-posframe-show' options RECORD carries.
+Every key in `etaf-posframe--app-options' is passed through, so a registration
+can use the whole panel vocabulary without the registry listing it again."
+  (let (options)
+    (dolist (key etaf-posframe--app-options)
+      (when (plist-member record key)
+        (setq options (plist-put options key (plist-get record key)))))
+    options))
+
 (defun etaf-posframe-app-record (id)
   "Return the registration plist of application ID."
   (or (cdr (assq id etaf-posframe-apps))
@@ -1530,27 +1561,24 @@ Without ID, prompt among the registered applications."
         (when-let* ((feature (plist-get record :require)))
           (require feature nil t))
         (puthash id
-                 (etaf-posframe-show
-                  (funcall (plist-get record :view)
-                           (funcall (plist-get record :create)))
-                  :key id
-                  :at (or (plist-get record :at) 'frame-top-right)
-                  :stack (if (plist-member record :stack)
-                             (plist-get record :stack)
-                           t)
-                  :width (or (plist-get record :width)
-                             etaf-posframe-default-width)
-                  :height (or (plist-get record :height)
-                              etaf-posframe-default-max-height)
-                  :header (or (plist-get record :header)
-                              (plist-get record :title))
-                  :fill (if (plist-member record :fill) (plist-get record :fill) nil)
-                  :pinned t
-                  :focusable (if (plist-member record :focusable)
-                                 (plist-get record :focusable)
-                               t)
-                  :on-close (lambda (_panel)
-                              (puthash id nil etaf-posframe--app-panels)))
+                 (apply #'etaf-posframe-show
+                        (funcall (plist-get record :view)
+                                 (funcall (plist-get record :create)))
+                        (append
+                         ;; Defaults first, then the registration, then the
+                         ;; keys this registry owns.
+                         (list :at 'frame-top-right
+                               :stack t
+                               :width etaf-posframe-default-width
+                               :height etaf-posframe-default-max-height
+                               :header (plist-get record :title)
+                               :pinned t
+                               :focusable t)
+                         (etaf-posframe--app-show-options record)
+                         (list :key id
+                               :on-close
+                               (lambda (_panel)
+                                 (puthash id nil etaf-posframe--app-panels)))))
                  etaf-posframe--app-panels)
         (gethash id etaf-posframe--app-panels)))))
 
