@@ -492,12 +492,13 @@ over the panel."
          (list :position at)
        (list :poshandler (etaf-posframe--poshandler at))))))
 
-(defun etaf-posframe--fit (panel window)
+(defun etaf-posframe--fit (panel)
   "Fit PANEL's Runtime to WINDOW's frame width and its body height.
 Follow the frame width, not the window's, because a transient scroll bar
 would otherwise narrow the canvas and leave a scroll bar strip on the right."
-  (let ((runtime (etaf-posframe--panel-runtime panel)))
-    (etaf-runtime-refit runtime (frame-pixel-width (window-frame window)) nil)))
+  (let ((runtime (etaf-posframe--panel-runtime panel))
+        (width (plist-get (etaf-posframe--panel-options panel) :pixel-width)))
+    (etaf-runtime-refit runtime width nil)))
 
 (defun etaf-posframe--text-height (panel window)
   "Return the pixel height of PANEL's rendered content in WINDOW."
@@ -515,27 +516,26 @@ The measured height is clamped to the row count plus one line of slack, so a
 transient measurement can never stretch the frame into an empty rectangle."
   (let* ((frame (window-frame window))
          (buffer (etaf-posframe--panel-buffer panel))
+         (options (etaf-posframe--panel-options panel))
+         (width (plist-get options :pixel-width))
          (rows (max 1 (etaf-posframe--lines buffer)))
          (line (frame-char-height frame))
-         (header (if (plist-get (etaf-posframe--panel-options panel) :header)
+         (header (if (plist-get options :header)
                      (window-header-line-height window)
                    0))
          (height (+ (or (etaf-posframe--text-height panel window) 0) header))
          (limit (+ (* (1+ rows) line) header 32)))
-    (when (and (> height 0) (<= height limit)
-               (> (abs (- height (frame-pixel-height frame))) 1))
-      (set-frame-size frame (frame-pixel-width frame) height t))))
+    (when (and width (> height 0) (<= height limit))
+      (set-frame-size frame width height t))))
 
 (defun etaf-posframe--fit-height (panel window)
   "Lay PANEL's content out without clipping, then fit the frame to it."
-  (let* ((frame (window-frame window))
+  (let* ((width (plist-get (etaf-posframe--panel-options panel) :pixel-width))
          (runtime (etaf-posframe--panel-runtime panel)))
-    (etaf-runtime-refit runtime (frame-pixel-width frame) 400)
+    (etaf-runtime-refit runtime width 400)
     (etaf-posframe--resize-to-content panel window)
-    (etaf-runtime-refit runtime (frame-pixel-width frame) nil)
-    (etaf-posframe--fit panel (or (get-buffer-window
-                                   (etaf-posframe--panel-buffer panel) t)
-                                  window))))
+    (etaf-runtime-refit runtime width nil)
+    (etaf-posframe--fit panel)))
 
 (defun etaf-posframe--show-frame (panel lines)
   "Show PANEL's frame for LINES of content and return its frame.
@@ -547,7 +547,7 @@ Re-fit once when the settled window width changes the content height."
       (let ((window (get-buffer-window buffer t)))
         (when (window-live-p window)
           (set-window-scroll-bars window 0 nil nil)
-          (etaf-posframe--fit panel window)
+          (etaf-posframe--fit panel)
           (let ((settled (etaf-posframe--lines buffer)))
             (unless (= settled lines)
               (setq lines settled)
@@ -703,6 +703,7 @@ described in the package Commentary."
                       (etaf-ref theme)))
          (resolved (if (functionp view) (funcall view) view))
          (options (plist-put options :width columns))
+         (options (plist-put options :pixel-width (* columns char-width)))
          (panel nil)
          buffer)
     (unless (display-graphic-p)
