@@ -242,8 +242,8 @@
                                 :variant 'muted)
                     (etaf-label :text "拖动标题栏 · q 关闭" :variant 'muted)))))))
 
-(defun etaf-pomodoro--open (state &optional position)
-  "Mount the panel for STATE at POSITION and return it."
+(defun etaf-pomodoro--open (state &optional position width)
+  "Mount the panel for STATE at POSITION and WIDTH columns and return it."
   (etaf-posframe-show
    (lambda ()
      (etaf-view
@@ -253,7 +253,7 @@
        :running (plist-get state :running)
        :style (plist-get state :style))))
    :at (or position 'frame-top-right)
-   :width etaf-pomodoro--width
+   :width (or width etaf-pomodoro--width)
    :header "≡ 番茄钟"
    :draggable t
    :pinned t
@@ -264,13 +264,17 @@
   "Remount the panel in STYLE at its current position.
 The retained renderer appends rows when a style subtree changes height, and a
 panel's size is settled when it opens, so a style change starts a new panel.
-The countdown carries over and the refs are recreated with the new Runtime."
+The countdown carries over and the refs are recreated with the new Runtime.
+The new panel keeps POSITION and the width the old frame had, so a panel the
+user resized does not snap back to the example's columns."
   (let* ((state etaf-pomodoro--state)
          (panel etaf-pomodoro--panel)
          (frame (and (etaf-posframe-live-p panel)
                      (etaf-posframe--panel-frame panel)))
          (position (and frame (cons (frame-parameter frame 'left)
                                     (frame-parameter frame 'top))))
+         (width (and frame (round (/ (frame-pixel-width frame)
+                                     (float (frame-char-width frame))))))
          (remaining (etaf-value (plist-get state :remaining)))
          (total (etaf-value (plist-get state :total)))
          (running (etaf-value (plist-get state :running))))
@@ -283,7 +287,7 @@ The countdown carries over and the refs are recreated with the new Runtime."
                 :running (etaf-ref running)
                 :style (etaf-ref style)))
     (setq etaf-pomodoro--panel
-          (etaf-pomodoro--open etaf-pomodoro--state position))))
+          (etaf-pomodoro--open etaf-pomodoro--state position width))))
 
 (defun etaf-pomodoro--close (&optional _panel)
   "Stop the tick timer and forget the panel."

@@ -194,21 +194,56 @@ mismatch left empty frame to the right of the canvas."
           (should-not (plist-get face :inverse-video)))
       (etaf-posframe-hide panel))))
 
-(ert-deftest etaf-posframe-refresh-restores-a-stretched-frame ()
-  "A frame stretched from outside returns to its panel size on refresh."
+(ert-deftest etaf-posframe-frame-follows-an-outside-resize ()
+  "A frame resized from outside becomes the panel width, canvas included."
   (skip-unless (display-graphic-p))
   (let* ((parent (selected-frame))
          (char (frame-char-width parent))
-         (columns (max 20 (- (/ (frame-pixel-width parent) char) 8)))
-         (panel (etaf-posframe-show (etaf-view (text "panel")) :width columns)))
+         (columns (max 20 (- (/ (frame-pixel-width parent) char) 40)))
+         (panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :width columns :header "ETAF")))
     (unwind-protect
-        (let ((frame (etaf-posframe-tests--panel-frame parent)))
-          (set-frame-size frame (+ (* columns char) (* 25 char)) 400 t)
-          (should (> (frame-pixel-width frame) (* columns char)))
+        (let* ((frame (etaf-posframe-tests--panel-frame parent))
+               (window (etaf-posframe-tests--panel-window frame))
+               (buffer (etaf-posframe-tests--panel-buffer frame))
+               (width (+ (* columns char) (* 10 char))))
+          (set-frame-size frame width 400 t)
+          ;; The resize is reported by the next redisplay, which then defers
+          ;; the re-layout out of its own callback.
+          (redisplay t)
+          (sleep-for 0.4)
+          (should (= width (frame-pixel-width frame)))
+          (should (= width (window-body-width window t)))
+          (should (= width (car (etaf-runtime-viewport
+                                 (etaf-runtime-for-buffer buffer)))))
+          (should (= (/ width char)
+                     (string-width (with-current-buffer buffer
+                                     header-line-format))))
+          ;; A later fit keeps the adopted width instead of snapping back.
           (etaf-posframe-refresh panel)
           (sleep-for 0.3)
-          (should (= (* columns char) (frame-pixel-width frame)))
-          (should (< (frame-pixel-height frame) 400)))
+          (should (= width (frame-pixel-width frame))))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-frame-adopts-a-shorter-height ()
+  "A frame shortened below the content becomes the new row budget."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (selected-frame))
+         (line (frame-char-height parent))
+         (char (frame-char-width parent))
+         (panel (etaf-posframe-show
+                 (etaf-view (column :item-gap '(lh 0)
+                                    (text "r1") (text "r2") (text "r3")
+                                    (text "r4") (text "r5") (text "r6")))
+                 :width 24 :height 6)))
+    (unwind-protect
+        (let* ((frame (etaf-posframe-tests--panel-frame parent))
+               (window (etaf-posframe-tests--panel-window frame)))
+          (should (<= 6 (window-body-height window)))
+          (set-frame-size frame (* 24 char) (* 3 line) t)
+          (redisplay t)
+          (sleep-for 0.4)
+          (should (= 3 (window-body-height window))))
       (etaf-posframe-hide panel))))
 
 (provide 'etaf-posframe-tests)

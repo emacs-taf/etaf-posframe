@@ -5,8 +5,8 @@
 A panel puts an ETAF View in a child frame attached to the current window.  It
 is the right shape when the content is about what the user is doing now: a
 preview of the symbol at point, a status board, a small form, a detail card.
-It is not a replacement for an application buffer, which owns a window, a mode
-and a lifecycle of its own.
+It is not a replacement for an application buffer that needs a mode line,
+window management and a lifecycle of its own.
 
 The View is mounted for the panel with its own Runtime.  Panels do not share
 state with an application buffer, and an application does not need to know a
@@ -40,6 +40,26 @@ and `etaf-posframe-live-p` reports whether one panel is still alive.
 its style or height; the fit is deferred past the current event and render, so
 a Button or timer may call it safely.  A panel keeps the size it opened with
 otherwise: resizing its frame by hand is not a supported gesture.
+
+### Hosting a complete app
+
+A panel takes any View, including one that wraps a whole application.  The app
+keeps its session, keys and internal scrolling; the panel only supplies the
+frame, the palette and the row budget.  Opening the player is one call:
+
+```elisp
+(etaf-posframe-show (etaf-ncm-view (etaf-ncm-create))
+                    :width 110 :height 30
+                    :header "网易云音乐"
+                    :pinned t :focusable t)
+```
+
+Pass the session in from outside: a View built inside the render may not create
+refs, so `etaf-ncm-view` must receive the session `etaf-ncm-create` returned.
+`:height` is the row budget such an app lays out for, `:width` is its column
+budget, and `:focusable t` is what gives it the keyboard; a passive panel never
+sees the app's keys.  The app scrolls its own lists inside the budget, so a
+taller panel shows more rows instead of growing the frame.
 
 ## Options
 
@@ -90,6 +110,20 @@ The frame is sized in pixels from the rendered content, so a row taller than the
 canonical line (a large clock, an icon) is never cut, and a trailing blank row
 left by the renderer is trimmed before measuring.  The panel re-fits when the
 parent frame changes size and after a theme switch.
+
+A panel whose own frame is resized from outside adopts that size: the View is
+laid out again at the new width and rows, the content reflows, the title bar
+repaints to the new column count and the height follows the new content.  Both
+dimensions are remembered, so a later re-fit and `etaf-posframe-refresh' keep
+them instead of snapping the frame back to the columns and rows the panel
+opened with.
+
+A wider or taller resize always becomes the new budget.  A shorter one only
+does when it cuts into the content, because the panel's own fit sets the frame
+to the content height: a View with intrinsic height, such as a card, stays as
+tall as its content however far its frame is stretched, while a View that fills
+its viewport, such as a complete app, follows the new height and shows more or
+fewer rows.
 
 ## Theme
 

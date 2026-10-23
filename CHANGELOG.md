@@ -5,9 +5,23 @@
 - The title bar keeps the panel's own surface colors and fills every column in
   a theme whose `header-line` face is inverted, instead of showing an inverted,
   partly filled bar.
+- A panel whose frame is resized from outside becomes that wide: the View is
+  laid out again, the content reflows, the title bar repaints to the new column
+  count and the height follows the new content.  The width is remembered across
+  `etaf-posframe-refresh' instead of snapping back to the opening columns.
+- `:height` is the row budget the View lays out for, and it caps the frame: a
+  View that fills its viewport, such as a whole application, no longer
+  stretches the frame to the measuring height (a 110x30 panel stayed 770x6416).
+- A frame resized from outside also adopts a new height as the row budget, so a
+  taller panel of a viewport-filling View shows more rows.  A card with
+  intrinsic height stays as tall as its content.
+- A style switch in the Pomodoro example keeps the width the user gave the
+  panel, so a resized panel does not snap back to the example's columns.
+- Document hosting a complete app in a panel; `etaf-ncm` opens this way with
+  `etaf-posframe-show` over `etaf-ncm-view`.
 - Cover the panel surface with tests that pin the frame to the canvas: exact
-  content width, no empty rows below a short panel, and a frame stretched from
-  outside returning to the panel size on refresh.
+  content width, no empty rows below a short panel, an outside resize adopting
+  its width and its rows, and the title bar painting every column.
 
 ## 0.1.0
 

@@ -4,7 +4,7 @@ EMACS ?= emacs
 POSFRAME_DIR ?= $(lastword $(sort $(wildcard $(HOME)/.emacs.d/elpa/posframe-*)))
 PROVIDERS = -L ../etaf -L ../ebox -L ../ecss -L ../ekp
 LOAD_PATH = -L . -L tests $(PROVIDERS) $(if $(POSFRAME_DIR),-L $(POSFRAME_DIR))
-SOURCES = etaf-posframe.el examples/etaf-symbol-card.el tests/etaf-posframe-tests.el
+SOURCES = etaf-posframe.el examples/etaf-pomodoro.el examples/etaf-symbol-card.el tests/etaf-posframe-tests.el
 
 .PHONY: all compile load test check clean structure-check setup-hooks acceptance api-check
 

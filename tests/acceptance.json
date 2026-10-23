@@ -71,9 +71,14 @@
    "purpose": "The title bar covers every panel column and keeps the panel's own palette in a theme whose header line is inverted."
   },
   {
-   "name": "etaf-posframe-refresh-restores-a-stretched-frame",
+   "name": "etaf-posframe-frame-follows-an-outside-resize",
    "file": "tests/etaf-posframe-tests.el",
-   "purpose": "A frame stretched from outside returns to the panel width and content height on refresh."
+   "purpose": "A frame resized from outside becomes the panel width: the canvas and the title bar re-lay out at it and a later re-fit keeps it."
+  },
+  {
+   "name": "etaf-posframe-frame-adopts-a-shorter-height",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A frame shortened below the rendered content becomes the new row budget, so a panel clips instead of growing back."
   }
  ]
 }
