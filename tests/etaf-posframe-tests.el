@@ -679,7 +679,14 @@ switches it without running any panel command."
     (unwind-protect
         (progn
           (select-frame origin)
-          ;; The timer samples the mouse position; answer for it.
+          ;; A command running inside the panel focuses it, which is what a
+          ;; mouse movement over the panel does.
+          (select-frame origin)
+          (with-current-buffer (etaf-posframe--panel-buffer panel)
+            (run-hooks 'post-command-hook))
+          (should (eq (selected-frame) frame))
+          ;; The timer is the fallback when no event arrives: answer its query.
+          (select-frame origin)
           (cl-letf (((symbol-function 'mouse-pixel-position)
                      (lambda () (cons frame '(10 . 10)))))
             (sleep-for (+ 0.2 etaf-posframe-hover-interval))

@@ -1034,11 +1034,29 @@ Re-fit once when the settled window width changes the content height."
           (setf (etaf-posframe--panel-focused panel) t))
         (etaf-posframe--paint-borders)))))
 
+(defun etaf-posframe--focus-buffer-panel ()
+  "Focus the panel whose buffer is current, if it accepts the keyboard.
+A mouse movement inside a panel runs its renderer's hover command with the panel
+buffer current, so this follows the pointer without asking where the pointer is:
+polling `mouse-pixel-position' reports the last event, which is stale while the
+pointer rests."
+  (when-let* ((panel (cl-find-if
+                      (lambda (panel)
+                        (and (plist-get (etaf-posframe--panel-options panel)
+                                        :focusable)
+                             (eq (etaf-posframe--panel-buffer panel)
+                                 (current-buffer))))
+                      etaf-posframe--panels))
+              (frame (etaf-posframe--panel-frame panel)))
+    (unless (eq (selected-frame) frame)
+      (etaf-posframe--restore-input-focus frame)
+      (setf (etaf-posframe--panel-focused panel) t))))
+
 (defun etaf-posframe--follow-focus ()
-  "Repaint the borders when the selected frame changed under us.
-Clicking a panel or the frame behind it selects it; that does not always reach
-`after-focus-change-function', so the borders follow the selection after every
-command instead."
+  "Follow the pointer and the selection for the panel borders.
+A command that runs inside a panel focuses it (a mouse movement over it is such
+a command), and any selection change repaints the borders."
+  (etaf-posframe--focus-buffer-panel)
   (unless (eq (selected-frame) etaf-posframe--painted-focus)
     (etaf-posframe--paint-borders)))
 
