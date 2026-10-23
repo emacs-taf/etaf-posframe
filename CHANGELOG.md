@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The title bar keeps the panel's own surface colors and fills every column in
+  a theme whose `header-line` face is inverted, instead of showing an inverted,
+  partly filled bar.
+- Cover the panel surface with tests that pin the frame to the canvas: exact
+  content width, no empty rows below a short panel, and a frame stretched from
+  outside returning to the panel size on refresh.
+
 ## 0.1.0
 
 - First release: `etaf-posframe-show`, `etaf-posframe-hide`,

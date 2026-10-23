@@ -99,7 +99,8 @@ repeating colors.  `etaf-posframe-show` applies it by default as a reactive
 Theme: loading another theme re-derives the palette and restyles every live
 panel through `enable-theme-functions`, and the panel re-fits its height for the
 new faces.  The header line is a full-width title bar painted with the same
-surface and border colors as the panel.
+surface and border colors as the panel; it keeps those colors and fills every
+column even when the frame's own `header-line` face is inverted.
 
 A panel that builds its own themed boundary must pass the View as a component
 property and render it inside the component, not through the default slot:

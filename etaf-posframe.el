@@ -434,7 +434,12 @@ over the panel."
                   'face (list :background (plist-get theme :ui-panel-bg)
                               :foreground (plist-get theme :ui-panel-fg)
                               :weight 'bold
-                              :height 1.0)
+                              :height 1.0
+                              ;; A theme may render its own header line
+                              ;; inverted; the title bar keeps the panel's
+                              ;; palette and paints every column.
+                              :inverse-video nil
+                              :extend t)
                   'underline (list :color (plist-get theme :ui-panel-border)
                                    :style 'line)))))
 

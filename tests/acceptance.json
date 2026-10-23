@@ -54,6 +54,26 @@
    "name": "etaf-posframe-killing-the-parent-buffer-closes-the-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "The panel owns a kill-buffer hook in its parent buffer, so killing that buffer releases the panel."
+  },
+  {
+   "name": "etaf-posframe-frame-is-as-wide-as-the-canvas",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel frame is exactly as wide as its content columns, so no empty frame is left beside the canvas."
+  },
+  {
+   "name": "etaf-posframe-frame-is-not-taller-than-the-content",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A one-line panel fits its frame and leaves no empty rows below the rendered content."
+  },
+  {
+   "name": "etaf-posframe-header-bar-paints-the-full-width",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "The title bar covers every panel column and keeps the panel's own palette in a theme whose header line is inverted."
+  },
+  {
+   "name": "etaf-posframe-refresh-restores-a-stretched-frame",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A frame stretched from outside returns to the panel width and content height on refresh."
   }
  ]
 }
