@@ -9,6 +9,9 @@
   laid out again, the content reflows, the title bar repaints to the new column
   count and the height follows the new content.  The width is remembered across
   `etaf-posframe-refresh' instead of snapping back to the opening columns.
+- Closing a focused panel hands the window system's input focus back to the
+  frame it was opened from.  `select-frame' alone left macOS without a key
+  window, so the next command froze until the user clicked the parent frame.
 - A returned panel prints as one readable line.  Its Runtime and Theme ref
   used to live in the struct, so printing the value of an
   `etaf-posframe-show` call (`C-x C-e`, a log line) followed a cycle.

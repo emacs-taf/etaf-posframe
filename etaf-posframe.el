@@ -708,6 +708,13 @@ Re-fit once when the settled window width changes the content height."
       (etaf-posframe--fit-height panel window)
       (window-frame window))))
 
+(defun etaf-posframe--restore-input-focus (frame)
+  "Select FRAME and give it the window system's input focus.
+`select-frame' alone leaves the system without a key window after a focused
+child frame is deleted, which then swallows the next command."
+  (when (frame-live-p frame)
+    (select-frame-set-input-focus frame)))
+
 (defun etaf-posframe--teardown (panel)
   "Release PANEL's frame, Runtime and timer without callbacks."
   (let ((buffer (etaf-posframe--panel-buffer panel))
@@ -720,9 +727,17 @@ Re-fit once when the settled window width changes the content height."
           (remove-hook 'kill-buffer-hook #'etaf-posframe--parent-killed t))
         (when (eq etaf-posframe--parent-panel panel)
           (setq etaf-posframe--parent-panel nil))))
-    (when (and (frame-live-p restore)
-               (eq (selected-frame) frame))
-      (select-frame restore))
+    ;; Deleting a child frame that held the window system's focus leaves macOS
+    ;; without a key window: `select-frame' only moves Emacs's own selection, so
+    ;; the next command has nowhere to go and the session appears frozen.  Hand
+    ;; input focus back to the frame the panel was opened from.
+    (when (frame-live-p restore)
+      (cond
+       ((eq (selected-frame) frame)
+        (etaf-posframe--restore-input-focus restore))
+       ((not (frame-focus-state frame))
+        (when (frame-parent frame)
+          (etaf-posframe--restore-input-focus restore)))))
     (when-let* ((timer (etaf-posframe--panel-timer panel)))
       (cancel-timer timer)
       (setf (etaf-posframe--panel-timer panel) nil))
@@ -746,6 +761,8 @@ Re-fit once when the settled window width changes the content height."
     (when (frame-live-p frame)
       (setf (etaf-posframe--panel-restore-frame panel) (selected-frame))
       (select-frame frame)
+      (when (frame-parameter frame 'window-id)
+        (ignore-errors (x-focus-frame frame)))
       (when-let* ((window (get-buffer-window (etaf-posframe--panel-buffer panel) t)))
         (select-window window)
         (set-window-point window (point-min))

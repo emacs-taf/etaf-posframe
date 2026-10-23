@@ -119,6 +119,11 @@
    "name": "etaf-posframe-panel-opened-in-a-panel-is-independent",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A panel shown while another panel has focus belongs to the underlying buffer and survives that first panel."
+  },
+  {
+   "name": "etaf-posframe-hiding-a-focused-panel-returns-focus",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Hiding a focused panel selects the frame it came from and a panel can be opened again immediately."
   }
  ]
 }

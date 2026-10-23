@@ -430,5 +430,25 @@ slot made that print follow a cycle until Emacs ran out of memory."
       (ignore-errors (etaf-posframe-hide first))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest etaf-posframe-hiding-a-focused-panel-returns-focus ()
+  "Hiding a focused panel selects the frame it came from, and the next show works.
+`select-frame' alone leaves the window system without a key window, so the
+command after a close used to freeze."
+  (skip-unless (display-graphic-p))
+  (let* ((view (etaf-view (text "panel")))
+         (origin (selected-frame))
+         (panel (etaf-posframe-show view :width 24 :height 3 :focusable t)))
+    (unwind-protect
+        (progn
+          (should-not (eq (selected-frame) origin))
+          (should (etaf-posframe-hide panel))
+          (should (eq (selected-frame) origin))
+          (should (window-live-p (selected-window)))
+          (let ((again (with-timeout (5 (error "opening a panel again hung"))
+                         (etaf-posframe-show view :width 24 :height 3))))
+            (should (etaf-posframe-live-p again))
+            (etaf-posframe-hide again)))
+      (ignore-errors (etaf-posframe-hide panel)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here
