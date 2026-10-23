@@ -107,9 +107,28 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:timeout` | Seconds after which the panel hides by itself. |
 | `:theme` | ETAF UI Theme plist; defaults to `etaf-posframe-theme` for the current frame. |
 | `:on-close` | Function called with the panel after it is hidden. |
+| `:key` | Identity of the panel.  A show with a live key replaces that panel; different keys, or no key, coexist. |
 
 Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
 unsupported `:at` signal `etaf-posframe-error` before any frame is created.
+
+## Several panels at once
+
+Panels are independent: each keeps its own child frame, Runtime, Theme, keys and
+position, and several stay open together.  `:key` identifies a panel, so
+showing the same key again replaces that panel and leaves the others alone.
+
+```elisp
+(etaf-posframe-show (etaf-ncm-view session) :key 'music :width 110 :height 30)
+(etaf-pomodoro-start)                  ;; :key 'pomodoro, its own frame
+(etaf-symbol-card-show)                ;; :key 'symbol-card, at point
+```
+
+A view without a `:key` shares the nil identity, so repeated shows without a key
+replace each other, which is what a preview panel wants.  Give an application
+panel a key: otherwise opening another keyless panel replaces it.
+`etaf-posframe-panels` lists everything alive, `etaf-posframe-hide` closes one
+of them, and `etaf-posframe-toggle` with a key only touches that key's panel.
 
 ## Lifecycle and ownership
 

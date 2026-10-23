@@ -267,5 +267,61 @@ slot made that print follow a cycle until Emacs ran out of memory."
           (should (string-match-p "etaf-posframe--panel" text)))
       (etaf-posframe-hide panel))))
 
+(ert-deftest etaf-posframe-panels-coexist-by-key ()
+  "Panels with different keys stay open together and hide independently."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (selected-frame))
+         (first (etaf-posframe-show (etaf-view (text "first")) :key 'first
+                                    :width 24 :height 2))
+         (second (etaf-posframe-show (etaf-view (text "second")) :key 'second
+                                     :width 24 :height 2)))
+    (unwind-protect
+        (progn
+          (should (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p second))
+          (should (= 2 (length (etaf-posframe-panels))))
+          (should (= 2 (length (seq-filter (lambda (frame) (frame-parent frame))
+                                          (frame-list)))))
+          (should (etaf-posframe-hide first))
+          (should-not (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p second))
+          (should (= 1 (length (etaf-posframe-panels)))))
+      (ignore-errors (etaf-posframe-hide second))
+      (ignore-errors (etaf-posframe-hide first))
+      (ignore-errors (etaf-posframe-tests--panel-frame parent)))))
+
+(ert-deftest etaf-posframe-show-replaces-the-same-key ()
+  "A second show with the same key replaces that panel and nothing else."
+  (skip-unless (display-graphic-p))
+  (let* ((first (etaf-posframe-show (etaf-view (text "first")) :key 'same
+                                    :width 24 :height 2))
+         (other (etaf-posframe-show (etaf-view (text "other")) :key 'other
+                                    :width 24 :height 2))
+         (replacement (etaf-posframe-show (etaf-view (text "third")) :key 'same
+                                          :width 24 :height 2)))
+    (unwind-protect
+        (progn
+          (should-not (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p replacement))
+          (should (etaf-posframe-live-p other))
+          (should (= 2 (length (etaf-posframe-panels)))))
+      (ignore-errors (etaf-posframe-hide replacement))
+      (ignore-errors (etaf-posframe-hide other)))))
+
+(ert-deftest etaf-posframe-toggle-targets-its-key ()
+  "Toggle hides the panel of its own key and leaves the others open."
+  (skip-unless (display-graphic-p))
+  (let* ((first (etaf-posframe-show (etaf-view (text "first")) :key 'first
+                                    :width 24 :height 2 :pinned t))
+         (second (etaf-posframe-show (etaf-view (text "second")) :key 'second
+                                     :width 24 :height 2 :pinned t)))
+    (unwind-protect
+        (progn
+          (should-not (etaf-posframe-toggle (etaf-view (text "first")) :key 'first
+                                            :width 24 :height 2))
+          (should-not (etaf-posframe-live-p first))
+          (should (etaf-posframe-live-p second)))
+      (ignore-errors (etaf-posframe-hide second)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

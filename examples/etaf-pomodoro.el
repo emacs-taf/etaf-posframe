@@ -252,6 +252,7 @@
        :total (plist-get state :total)
        :running (plist-get state :running)
        :style (plist-get state :style))))
+   :key 'pomodoro
    :at (or position 'frame-top-right)
    :width (or width etaf-pomodoro--width)
    :header "≡ 番茄钟"

@@ -17,7 +17,8 @@
 ;; the user's window layout.  It renders with ETAF, sizes the frame from the
 ;; rendered content and owns the panel lifecycle.  Graphical frames only.
 ;;
-;; A panel is passive by default: it does not take keyboard focus, it hides
+;; Panels are independent: each has its own frame, Runtime and behaviour, and
+;; several may be open at once.  A panel is passive by default: it does not take keyboard focus, it hides
 ;; before the next command outside the panel, and it never changes the selected
 ;; buffer.  `:focusable' gives it keyboard input, `:pinned' keeps it open until
 ;; it is closed explicitly and `:draggable' moves it by dragging its header
@@ -61,6 +62,10 @@
 ;;   :theme      ETAF UI Theme plist; defaults to `etaf-posframe-theme' for the
 ;;               current frame, so catalog Components match the user's frame.
 ;;   :on-close   Function called with the panel after it was hidden.
+;;   :key        Identity of the panel.  Showing a View with a key that is
+;;               already live replaces that panel; views with different keys,
+;;               or without a key, keep their own frame, Runtime and position,
+;;               so several panels stay open at the same time.
 ;;
 ;; Signal `etaf-posframe-error' for an unknown option, an invalid anchor or a
 ;; non-graphical frame.  A failed show unmounts the View and deletes the frame
@@ -69,14 +74,16 @@
 ;; Function: etaf-posframe-hide (&optional panel)
 ;;;###autoload (autoload 'etaf-posframe-hide "etaf-posframe" nil t)
 ;; Hide PANEL and release its Runtime, timer and frame.  PANEL defaults to the
-;; panel of the current buffer, which is what the panel's own keys call.  Return
-;; non-nil when a live panel was hidden.  Safe to call repeatedly.
+;; newest panel of the current buffer, which is what the panel's own keys call.
+;; Other panels stay open.  Return non-nil when a live panel was hidden.  Safe
+;; to call repeatedly.
 ;;
 ;; Function: etaf-posframe-toggle (view &rest options)
 ;;;###autoload (autoload 'etaf-posframe-toggle "etaf-posframe" nil t)
-;; Hide the current buffer's live panel, or show VIEW with OPTIONS.  Return the
-;; new panel, or nil when it hid one.  This is the entry for a key binding that
-;; opens and closes the same panel.
+;; Hide the panel of the same `:key', or show VIEW with OPTIONS.  Without `:key'
+;; this is the newest panel of the current buffer.  Return the new panel, or nil
+;; when it hid one.  This is the entry for a key binding that opens and closes
+;; the same panel without touching the others.
 ;;
 ;; Function: etaf-posframe-refresh (&optional panel)
 ;;;###autoload (autoload 'etaf-posframe-refresh "etaf-posframe" nil t)
@@ -291,7 +298,7 @@ result is a literal token plist accepted by `etaf-theme-provide'."
 
 (defconst etaf-posframe--option-keys
   '(:at :width :height :header :draggable :pinned :focusable :auto-focus
-    :dismiss :timeout :theme :on-close)
+    :dismiss :timeout :theme :on-close :key)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -710,6 +717,14 @@ panel was hidden."
 (add-hook 'enable-theme-functions #'etaf-posframe--theme-changed)
 (add-hook 'window-size-change-functions #'etaf-posframe--window-size-changed)
 
+(defun etaf-posframe--panel-for-key (key)
+  "Return the live panel whose `:key' is KEY, or nil.
+Panels without a `:key' share the nil identity, so showing one replaces the
+previous one; panels with distinct keys coexist."
+  (cl-find-if (lambda (panel)
+                (equal key (plist-get (etaf-posframe--panel-options panel) :key)))
+              etaf-posframe--panels))
+
 (defun etaf-posframe--panel-for-buffer (buffer)
   "Return the live panel anchored to BUFFER."
   (cl-find-if (lambda (panel) (eq (etaf-posframe--panel-parent panel) buffer))
@@ -762,7 +777,10 @@ described in the package Commentary."
     (unless (display-graphic-p)
       (signal 'etaf-posframe-error
               (list "ETAF panels need a graphical frame")))
-    (when-let* ((previous (etaf-posframe--panel-for-buffer parent-buffer)))
+    ;; Only the same key replaces a panel: different keys keep their own
+    ;; frame, Runtime and position, so several panels stay open at once.
+    (when-let* ((previous (etaf-posframe--panel-for-key
+                           (plist-get options :key))))
       (etaf-posframe-hide previous))
     (unless resolved
       (signal 'etaf-posframe-error (list "Panel View returned nil" view)))
@@ -828,11 +846,16 @@ described in the package Commentary."
 
 ;;;###autoload
 (defun etaf-posframe-toggle (view &rest options)
-  "Hide the current buffer's live panel, or show VIEW with OPTIONS.
-Return the new panel, or nil when it hid one."
-  (if-let* ((panel (etaf-posframe--current-panel)))
-      (progn (etaf-posframe-hide panel) nil)
-    (apply #'etaf-posframe-show view options)))
+  "Hide the panel of the same `:key', or show VIEW with OPTIONS.
+Without `:key' this is the panel of the current buffer.  Return the new panel,
+or nil when it hid one."
+  (let* ((options (etaf-posframe--validate (copy-sequence options)))
+         (panel (if (plist-member options :key)
+                    (etaf-posframe--panel-for-key (plist-get options :key))
+                  (etaf-posframe--current-panel))))
+    (if panel
+        (progn (etaf-posframe-hide panel) nil)
+      (apply #'etaf-posframe-show view options))))
 
 ;;;###autoload
 (defun etaf-posframe--adopt-frame-size (panel window)

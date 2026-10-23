@@ -84,6 +84,21 @@
    "name": "etaf-posframe-panel-prints-without-recursing",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "Printing a returned panel terminates, so evaluating an etaf-posframe-show call in a buffer cannot loop until memory runs out."
+  },
+  {
+   "name": "etaf-posframe-panels-coexist-by-key",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Two panels with different keys stay open at the same time and hiding one leaves the other alive."
+  },
+  {
+   "name": "etaf-posframe-show-replaces-the-same-key",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Showing a view again under the same key replaces only that panel, not the panels of other keys."
+  },
+  {
+   "name": "etaf-posframe-toggle-targets-its-key",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Toggle hides the panel of its own key and leaves the panels of other keys open."
   }
  ]
 }

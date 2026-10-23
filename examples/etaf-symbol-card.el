@@ -207,6 +207,7 @@ The card is passive: it does not take focus and the next command hides it."
        (unless symbol
          (user-error "Point is not on a symbol"))
        (etaf-symbol-card--view (etaf-symbol-card--data symbol))))
+   :key 'symbol-card
    :width etaf-symbol-card--width
    :at 'point
    :dismiss 'auto))
