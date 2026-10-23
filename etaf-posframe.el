@@ -174,7 +174,13 @@ They close the panel without consulting the View.")
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
   buffer frame runtime parent parent-frame options timer restore-frame focused
-  theme fit-timer settled)
+  theme fit-timer settled fit-window fit-count fit-muted-until)
+
+(defconst etaf-posframe--fit-limit 20
+  "Fits a panel allows within one second before it backs off.")
+
+(defconst etaf-posframe--fit-backoff 2
+  "Seconds a panel stops fitting after it exceeded `etaf-posframe--fit-limit'.")
 
 ;;; Theme
 
@@ -861,20 +867,41 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
   "Re-lay out PANEL at its frame size and fit the frame to the content.
 Runs outside render and event callbacks; it never touches the buffer.  Only a
 real size change re-lays the View out: re-laying out for a size the panel
-already has is the cost that made a resize feel like a stall."
-  (when (etaf-posframe-live-p panel)
-    (let* ((buffer (etaf-posframe--panel-buffer panel))
-           (window (get-buffer-window buffer t)))
-      (when (window-live-p window)
-        ;; A frame resized from outside re-lays the View out at its new width
-        ;; and rows; a content change needs no re-layout, because ETAF already
-        ;; rendered it and a second layout writer duplicates rows.  Either way
-        ;; only the frame height follows the rendered content.
-        (let ((adopted (etaf-posframe--adopt-frame-size panel window))
-              (fitted (etaf-posframe--resize-to-content panel window)))
-          (when (and (or adopted fitted)
-                     (etaf-posframe--panel-settled panel))
-            (etaf-posframe--fit panel)))))))
+already has is the cost that made a resize feel like a stall.  A panel that
+fits more often than `etaf-posframe--fit-limit' in one second backs off for
+`etaf-posframe--fit-backoff', so a condition that keeps resizing it can never
+run away with the CPU."
+  (when (and (etaf-posframe-live-p panel)
+             (or (null (etaf-posframe--panel-fit-muted-until panel))
+                 (< (float-time) (etaf-posframe--panel-fit-muted-until panel))))
+    (let* ((now (float-time))
+           (start (etaf-posframe--panel-fit-window panel))
+           (count (if (and start (< (- now start) 1.0))
+                      (1+ (or (etaf-posframe--panel-fit-count panel) 0))
+                    1)))
+      (setf (etaf-posframe--panel-fit-window panel) (if (= count 1) now start)
+            (etaf-posframe--panel-fit-count panel) count)
+      (if (> count etaf-posframe--fit-limit)
+          (progn
+            (setf (etaf-posframe--panel-fit-muted-until panel)
+                  (+ now etaf-posframe--fit-backoff)
+                  (etaf-posframe--panel-fit-count panel) 0
+                  (etaf-posframe--panel-fit-window panel) nil)
+            (message "ETAF panel: %s fitted %d times in one second; backing off %ss"
+                     (buffer-name (etaf-posframe--panel-buffer panel))
+                     count etaf-posframe--fit-backoff))
+        (let* ((buffer (etaf-posframe--panel-buffer panel))
+               (window (get-buffer-window buffer t)))
+          (when (window-live-p window)
+            ;; A frame resized from outside re-lays the View out at its new
+            ;; width and rows; a content change needs no re-layout, because
+            ;; ETAF already rendered it and a second layout writer duplicates
+            ;; rows.  Either way only the frame height follows the content.
+            (let ((adopted (etaf-posframe--adopt-frame-size panel window))
+                  (fitted (etaf-posframe--resize-to-content panel window)))
+              (when (and (or adopted fitted)
+                         (etaf-posframe--panel-settled panel))
+                (etaf-posframe--fit panel)))))))))
 
 ;;;###autoload
 (defun etaf-posframe-refresh (&optional panel)

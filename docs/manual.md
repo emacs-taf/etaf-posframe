@@ -118,6 +118,10 @@ dimensions are remembered, so a later re-fit and `etaf-posframe-refresh' keep
 them instead of snapping the frame back to the columns and rows the panel
 opened with.
 
+A panel that has to fit itself more than 20 times within a second backs off for
+two seconds and reports the count on the echo area, so a condition that keeps
+resizing a panel cannot run away with the CPU.
+
 A wider or taller resize always becomes the new budget.  A shorter one only
 does when it cuts into the content, because the panel's own fit sets the frame
 to the content height: a View with intrinsic height, such as a card, stays as

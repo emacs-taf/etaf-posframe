@@ -9,6 +9,9 @@
   laid out again, the content reflows, the title bar repaints to the new column
   count and the height follows the new content.  The width is remembered across
   `etaf-posframe-refresh' instead of snapping back to the opening columns.
+- A panel that would fit itself more than 20 times in a second backs off for
+  two seconds and reports it, so a condition that keeps resizing it cannot
+  spin the CPU.
 - `:height` is the row budget the View lays out for, and it caps the frame: a
   View that fills its viewport, such as a whole application, no longer
   stretches the frame to the measuring height (a 110x30 panel stayed 770x6416).
