@@ -12,6 +12,9 @@
 - Closing a focused panel hands the window system's input focus back to the
   frame it was opened from.  `select-frame' alone left macOS without a key
   window, so the next command froze until the user clicked the parent frame.
+- `etaf-posframe-cycle' walks the input focus through the open panels and back
+  to the frame behind them, so one key switches between the applications and the
+  buffer they float over.
 - Applications register once with `etaf-posframe-register-app' and open with one
   `etaf-posframe-app' call; `etaf-posframe-app-prefix' dispatches the registered
   shortcuts, so a caller writes one line per application instead of its own

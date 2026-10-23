@@ -542,5 +542,25 @@ command after a close used to freeze."
       (setq etaf-posframe-apps saved-apps
             etaf-posframe-app-map saved-map))))
 
+(ert-deftest etaf-posframe-cycle-walks-panels-and-back ()
+  "Cycling focuses each panel in turn, then returns to the frame behind them."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (selected-frame))
+         (first (etaf-posframe-show (etaf-view (text "first")) :key 'cycle-one
+                                    :width 24 :height 2 :pinned t))
+         (second (etaf-posframe-show (etaf-view (text "second")) :key 'cycle-two
+                                     :width 24 :height 2 :pinned t)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-cycle)
+          (should (eq (selected-frame) (etaf-posframe-panel-frame second)))
+          (etaf-posframe-cycle)
+          (should (eq (selected-frame) (etaf-posframe-panel-frame first)))
+          (etaf-posframe-cycle)
+          (should (eq (selected-frame) origin)))
+      (ignore-errors (etaf-posframe-hide second))
+      (ignore-errors (etaf-posframe-hide first))
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

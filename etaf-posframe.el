@@ -138,6 +138,13 @@
 ;; application, so a repeat within `etaf-posframe-app-repeat-delay' seconds is
 ;; ignored.
 ;;
+;; Function: etaf-posframe-cycle ()
+;;;###autoload (autoload 'etaf-posframe-cycle "etaf-posframe" nil t)
+;; Move input focus to the next open panel, and from the last one back to the
+;; frame it belongs to.  With no panel focused this focuses the most recent
+;; panel.  Bind it to a key to walk between the open applications and the
+;; buffer behind them.
+;;
 ;; Function: etaf-posframe-app-prefix ()
 ;;;###autoload (autoload 'etaf-posframe-app-prefix "etaf-posframe" nil t)
 ;; Read one key and open the registered application bound to it.  Bind this once,
@@ -1352,6 +1359,32 @@ it once per repeat and stall Emacs."
                 (list (cons id options)))
         etaf-posframe-app-map (etaf-posframe--app-keymap))
   id)
+
+;;;###autoload
+(defun etaf-posframe-cycle ()
+  "Move input focus to the next open panel, then back to its frame.
+With no panel focused, focus the most recent panel.  Return the frame that now
+has focus."
+  (interactive)
+  (let* ((panels (etaf-posframe-panels))
+         (selected (selected-frame))
+         (current (cl-position-if (lambda (panel)
+                                    (eq (etaf-posframe--panel-frame panel) selected))
+                                  panels))
+         (target (cond ((null panels) (selected-frame))
+                       ((null current) (etaf-posframe--panel-frame (car panels)))
+                       ((< (1+ current) (length panels))
+                        (etaf-posframe--panel-frame (nth (1+ current) panels)))
+                       (t (or (etaf-posframe--panel-parent-frame
+                               (nth current panels))
+                              (selected-frame))))))
+    (when (frame-live-p target)
+      (etaf-posframe--restore-input-focus target)
+      (when-let* ((panel (etaf-posframe--panel-for-frame target))
+                  (window (get-buffer-window (etaf-posframe--panel-buffer panel) t)))
+        (select-window window)
+        (setf (etaf-posframe--panel-focused panel) t)))
+    target))
 
 ;;;###autoload
 (defun etaf-posframe-app-prefix ()
