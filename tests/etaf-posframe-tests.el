@@ -682,7 +682,7 @@ switches it without running any panel command."
           ;; A command running inside the panel focuses it, which is what a
           ;; mouse movement over the panel does.
           (select-frame origin)
-          (with-current-buffer (etaf-posframe--panel-buffer panel)
+          (with-current-buffer (window-buffer (frame-root-window frame))
             (run-hooks 'post-command-hook))
           (should (eq (selected-frame) frame))
           ;; The timer is the fallback when no event arrives: answer its query.
