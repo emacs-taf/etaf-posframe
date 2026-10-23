@@ -441,7 +441,7 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 (defconst etaf-posframe--option-keys
   '(:at :cell :stack :width :height :header :draggable :pinned :focusable
     :auto-focus :dismiss :timeout :theme :on-close :key :border-width
-    :border-color)
+    :border-color :focus-border-color)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -488,10 +488,11 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
              (signal 'etaf-posframe-error
                      (list (format "Panel :border-width must be 0..19 pixels: %S"
                                    value)))))
-          (:border-color
+          ((or :border-color :focus-border-color)
            (unless (or (null value) (stringp value))
              (signal 'etaf-posframe-error
-                     (list "Panel :border-color must be a color string" value))))
+                     (list (format "Panel %s must be a color string or nil" key)
+                           value))))
           (:on-close
            (unless (or (null value) (functionp value))
              (signal 'etaf-posframe-error
@@ -687,7 +688,8 @@ start at zero, so (0 . 0) is its first cell."
                  (not (plist-get (etaf-posframe--panel-options panel) :pinned))
                  (not (eq selected parent))
                  (eq (frame-focus-state parent) nil))
-            (etaf-posframe-hide panel))))))))
+            (etaf-posframe-hide panel)))))
+      (etaf-posframe--paint-borders))))
 
 (defun etaf-posframe--refresh-hooks ()
   "Install the dismiss hooks exactly while a panel needs them."
@@ -889,6 +891,36 @@ Re-fit once when the settled window width changes the content height."
       (etaf-posframe--fit-height panel window)
       (window-frame window))))
 
+(defun etaf-posframe--border-color (panel focused)
+  "Return PANEL's border colour, the accent colour while FOCUSED."
+  (when (or focused (not (memq :focus-border-color
+                               (etaf-posframe--panel-options panel))))
+    (let* ((theme-ref (etaf-posframe--panel-theme panel))
+           (palette (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
+           (options (etaf-posframe--panel-options panel)))
+      (if focused
+          (if (memq :focus-border-color options)
+              (plist-get options :focus-border-color)
+            (plist-get palette :ui-accent))
+        (or (plist-get options :border-color)
+            (plist-get palette :ui-panel-border))))))
+
+(defun etaf-posframe--paint-border (panel)
+  "Colour PANEL's border by whether it holds the input focus."
+  (let ((frame (etaf-posframe--panel-frame panel)))
+    (when (frame-live-p frame)
+      (when-let* ((color (etaf-posframe--border-color
+                          panel (eq (selected-frame) frame))))
+        (set-face-background (if (facep 'child-frame-border)
+                                 'child-frame-border
+                               'internal-border)
+                             color frame)))))
+
+(defun etaf-posframe--paint-borders ()
+  "Refresh the focus border of every live panel."
+  (dolist (panel etaf-posframe--panels)
+    (ignore-errors (etaf-posframe--paint-border panel))))
+
 (defun etaf-posframe--restore-input-focus (frame)
   "Select FRAME and give it the window system's input focus.
 `select-frame' alone leaves the system without a key window after a focused
@@ -947,7 +979,8 @@ child frame is deleted, which then swallows the next command."
       (when-let* ((window (get-buffer-window (etaf-posframe--panel-buffer panel) t)))
         (select-window window)
         (set-window-point window (point-min))
-        (setf (etaf-posframe--panel-focused panel) t)))))
+        (setf (etaf-posframe--panel-focused panel) t)))
+    (etaf-posframe--paint-borders)))
 
 (defun etaf-posframe-hide (&optional panel)
   "Hide PANEL and release its Runtime, timer and frame.
@@ -958,6 +991,7 @@ panel was hidden."
     (setq etaf-posframe--panels (delq panel etaf-posframe--panels))
     (etaf-posframe--teardown panel)
     (etaf-posframe--refresh-hooks)
+    (etaf-posframe--paint-borders)
     (when-let* ((callback (plist-get (etaf-posframe--panel-options panel)
                                      :on-close)))
       (condition-case error
@@ -981,6 +1015,7 @@ panel was hidden."
                                    (plist-get palette :ui-bg))
               (set-frame-parameter frame 'foreground-color
                                    (plist-get palette :ui-fg)))
+            (ignore-errors (etaf-posframe--paint-border panel))
             (let ((buffer (etaf-posframe--panel-buffer panel))
                   (header (plist-get (etaf-posframe--panel-options panel)
                                      :header))
@@ -1110,6 +1145,7 @@ described in the package Commentary."
             ;; From here on a frame resized from outside re-lays the View out
             ;; at its new width instead of being snapped back.
             (setf (etaf-posframe--panel-settled panel) t)
+            (ignore-errors (etaf-posframe--paint-border panel))
             (with-current-buffer buffer
               (setq etaf-posframe--panel panel))
             (with-current-buffer parent-buffer
@@ -1384,6 +1420,7 @@ has focus."
                   (window (get-buffer-window (etaf-posframe--panel-buffer panel) t)))
         (select-window window)
         (setf (etaf-posframe--panel-focused panel) t)))
+    (etaf-posframe--paint-borders)
     target))
 
 ;;;###autoload

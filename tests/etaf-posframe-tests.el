@@ -562,5 +562,34 @@ command after a close used to freeze."
       (ignore-errors (etaf-posframe-hide first))
       (ignore-errors (select-frame-set-input-focus origin)))))
 
+(ert-deftest etaf-posframe-focus-shows-in-the-border ()
+  "The focused panel paints its border in the accent colour, the others not."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (selected-frame))
+         (first (etaf-posframe-show (etaf-view (text "first")) :key 'border-one
+                                    :width 24 :height 2 :pinned t :focusable t))
+         (second (etaf-posframe-show (etaf-view (text "second")) :key 'border-two
+                                     :width 24 :height 2 :pinned t :focusable t))
+         (first-frame (etaf-posframe-panel-frame first))
+         (second-frame (etaf-posframe-panel-frame second))
+         (palette (etaf-posframe-theme origin))
+         (accent (plist-get palette :ui-accent))
+         (resting (plist-get palette :ui-panel-border))
+         (border-colour (lambda (frame)
+                          (face-attribute 'child-frame-border :background frame))))
+    (unwind-protect
+        (progn
+          (etaf-posframe-cycle)          ; focus the most recent panel
+          (with-timeout (2 nil) (sleep-for 0.1))
+          (should (equal accent (funcall border-colour second-frame)))
+          (should (equal resting (funcall border-colour first-frame)))
+          (etaf-posframe-cycle)          ; focus the next one
+          (with-timeout (2 nil) (sleep-for 0.1))
+          (should (equal accent (funcall border-colour first-frame)))
+          (should (equal resting (funcall border-colour second-frame))))
+      (ignore-errors (etaf-posframe-hide second))
+      (ignore-errors (etaf-posframe-hide first))
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

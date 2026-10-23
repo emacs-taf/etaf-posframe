@@ -12,6 +12,9 @@
 - Closing a focused panel hands the window system's input focus back to the
   frame it was opened from.  `select-frame' alone left macOS without a key
   window, so the next command froze until the user clicked the parent frame.
+- The panel holding the input focus paints its border in the Theme accent, so
+  the active application is visible among several open panels;
+  `:focus-border-color` overrides it and nil turns it off.
 - `etaf-posframe-cycle' walks the input focus through the open panels and back
   to the frame behind them, so one key switches between the applications and the
   buffer they float over.

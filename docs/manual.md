@@ -213,7 +213,11 @@ symbol anchor, not a fixed position:
 ## Look
 
 Every panel draws a one pixel border in the Theme's panel border colour, so it
-reads as a surface above the buffer rather than a hole in it.  `:border-width`
+reads as a surface above the buffer rather than a hole in it.  The panel that
+holds the input focus paints its border in the Theme's accent instead, which is
+how you see where the keyboard is while several panels are open; the frame behind
+them has no border at all.  `:focus-border-color` overrides that colour and
+`(nil)` turns the hint off.  `:border-width`
 changes or removes it and `:border-color` overrides the colour; both keep the
 content width exact, because the border is painted outside the text area.
 

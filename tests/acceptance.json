@@ -149,6 +149,11 @@
    "name": "etaf-posframe-cycle-walks-panels-and-back",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "Cycling moves focus through the open panels in order and returns to the frame behind them."
+  },
+  {
+   "name": "etaf-posframe-focus-shows-in-the-border",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "The panel holding the input focus paints its border in the theme accent while the others keep the resting border colour."
   }
  ]
 }
