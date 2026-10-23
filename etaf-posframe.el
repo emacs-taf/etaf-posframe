@@ -192,8 +192,11 @@ result is a literal token plist accepted by `etaf-theme-provide'."
                   (face-attribute 'default :foreground nil frame))
                  "#000000"))
          (dark (eq (frame-parameter frame 'background-mode) 'dark))
-         (panel (etaf-posframe--mix bg (if dark "#FFFFFF" "#000000") 0.045))
-         (border (etaf-posframe--mix panel fg 0.26))
+         ;; The panel must read as a surface above the buffer, not blend
+         ;; into it: lift it clearly in dark themes and drop it in light ones.
+         (panel (etaf-posframe--mix bg (if dark "#FFFFFF" "#000000")
+                                    (if dark 0.10 0.05)))
+         (border (etaf-posframe--mix panel fg 0.30))
          (muted (etaf-posframe--mix fg panel 0.42))
          (accent (or (etaf-posframe--color
                       (ignore-errors (face-attribute 'link :foreground nil frame)))
@@ -395,8 +398,10 @@ over the panel."
                  (memq (plist-get (etaf-posframe--panel-options panel) :dismiss)
                        '(auto focus-out)))
                etaf-posframe--panels)
-      (add-hook 'after-focus-change-function #'etaf-posframe--focus-change)
-    (remove-hook 'after-focus-change-function #'etaf-posframe--focus-change)))
+      (add-function :after after-focus-change-function
+                    #'etaf-posframe--focus-change)
+    (remove-function after-focus-change-function
+                     #'etaf-posframe--focus-change)))
 
 ;;; Rendering
 
