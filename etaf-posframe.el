@@ -530,7 +530,9 @@ would otherwise narrow the canvas and leave a scroll bar strip on the right."
 The rendered content decides the height, but never beyond the rows the panel
 was opened for: a View that fills its viewport, such as a complete app, would
 otherwise stretch the frame to the measuring budget.  The clamp also keeps a
-transient measurement from stretching the frame into an empty rectangle."
+transient measurement from stretching the frame into an empty rectangle.
+Return non-nil when the frame size changed; sizing a frame to the size it
+already has is what turns one resize into a stream of size-change hooks."
   (let* ((frame (window-frame window))
          (options (etaf-posframe--panel-options panel))
          (width (plist-get options :pixel-width))
@@ -538,10 +540,13 @@ transient measurement from stretching the frame into an empty rectangle."
          (header (if (plist-get options :header)
                      (window-header-line-height window)
                    0))
-         (height (+ (or (etaf-posframe--text-height panel window) 0) header))
-         (limit (+ (* (etaf-posframe--row-budget panel) line) header)))
-    (when (and width (> height 0))
-      (set-frame-size frame width (min height limit) t))))
+         (height (min (+ (or (etaf-posframe--text-height panel window) 0) header)
+                      (+ (* (etaf-posframe--row-budget panel) line) header))))
+    (when (and width (> height 0)
+               (or (/= width (frame-pixel-width frame))
+                   (/= height (frame-pixel-height frame))))
+      (set-frame-size frame width height t)
+      t)))
 
 (defun etaf-posframe--fit-height (panel window)
   "Lay PANEL out in its row budget, then fit the frame to the content."
@@ -853,20 +858,23 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
 
 ;;;###autoload
 (defun etaf-posframe--fit-now (panel)
-  "Re-lay out PANEL at its frame width and fit the frame to the content.
-Runs outside render and event callbacks; it never touches the buffer."
+  "Re-lay out PANEL at its frame size and fit the frame to the content.
+Runs outside render and event callbacks; it never touches the buffer.  Only a
+real size change re-lays the View out: re-laying out for a size the panel
+already has is the cost that made a resize feel like a stall."
   (when (etaf-posframe-live-p panel)
     (let* ((buffer (etaf-posframe--panel-buffer panel))
            (window (get-buffer-window buffer t)))
       (when (window-live-p window)
-        ;; A frame resized from outside re-lays the View out at its new width;
-        ;; a content change needs no re-layout, because ETAF already rendered
-        ;; it and a second layout writer duplicates rows.  Either way only the
-        ;; frame height follows the rendered content.
-        (etaf-posframe--adopt-frame-size panel window)
-        (etaf-posframe--resize-to-content panel window)
-        (when (etaf-posframe--panel-settled panel)
-          (etaf-posframe--fit panel))))))
+        ;; A frame resized from outside re-lays the View out at its new width
+        ;; and rows; a content change needs no re-layout, because ETAF already
+        ;; rendered it and a second layout writer duplicates rows.  Either way
+        ;; only the frame height follows the rendered content.
+        (let ((adopted (etaf-posframe--adopt-frame-size panel window))
+              (fitted (etaf-posframe--resize-to-content panel window)))
+          (when (and (or adopted fitted)
+                     (etaf-posframe--panel-settled panel))
+            (etaf-posframe--fit panel)))))))
 
 ;;;###autoload
 (defun etaf-posframe-refresh (&optional panel)
