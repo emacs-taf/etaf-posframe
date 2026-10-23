@@ -15,4 +15,10 @@
 - `etaf-posframe-refresh` re-measures the content and fits the frame.
 - One panel per buffer: showing another replaces the first, and killing the
   parent buffer hides its panel.
-- Ship the symbol card example under `examples/`.
+- Panels follow the Emacs theme: loading a theme re-derives the palette and
+  restyles live panels, including the title bar.
+- Frame height follows the rendered pixels, so rows taller than the canonical
+  line are not clipped; trailing blank rows are trimmed.
+- Add `frame-top-right` and `frame-bottom-right` anchors and a pointer-free
+  panel surface (no cursor).
+- Ship the symbol card and the three-style Pomodoro examples under `examples/`.

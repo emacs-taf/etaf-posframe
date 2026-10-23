@@ -43,7 +43,7 @@ reactive View changed its height.
 
 | Option | Meaning |
 | --- | --- |
-| `:at` | `'point` (default), `'point-top`, window and frame anchors, an absolute `(X . Y)` pixel pair, or a Posframe poshandler. |
+| `:at` | `'point` (default), `'point-top`, window anchors, `'frame-top-right`, `'frame-bottom-right`, `'frame-center`, an absolute `(X . Y)` pixel pair, or a Posframe poshandler. |
 | `:width` | Content columns.  Defaults to `etaf-posframe-default-width`, clamped to the parent frame. |
 | `:height` | Maximum content lines.  Taller content clips; the frame still shrinks to the content. |
 | `:header` | Header line text.  Without it the panel has no header line and cannot be dragged. |
@@ -92,14 +92,20 @@ stays clipped, so raise `:height` for panels whose content can grow.
 A panel renders at the width it is given, so its height follows the content.
 `:height` caps that height; content above the cap is clipped by the Runtime's
 viewport.  Width is clamped to the parent frame, so a wide request still fits.
-The frame is sized from rendered rows rather than guessed, and the panel re-fits
-once after the window reports its settled width.
+The frame is sized in pixels from the rendered content, so a row taller than the
+canonical line (a large clock, an icon) is never cut, and a trailing blank row
+left by the renderer is trimmed before measuring.  The panel re-fits when the
+parent frame changes size and after a theme switch.
 
 ## Theme
 
 `etaf-posframe-theme` derives the catalog tokens from the frame's default face,
 so `etaf-ui` Components match the user's light or dark theme without the caller
-repeating colors.  `etaf-posframe-show` applies it by default.
+repeating colors.  `etaf-posframe-show` applies it by default as a reactive
+Theme: loading another theme re-derives the palette and restyles every live
+panel through `enable-theme-functions`, and the panel re-fits its height for the
+new faces.  The header line is a full-width title bar painted with the same
+surface and border colors as the panel.
 
 A panel that builds its own themed boundary must pass the View as a component
 property and render it inside the component, not through the default slot:

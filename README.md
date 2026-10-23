@@ -27,9 +27,11 @@ keeps it open until it is closed, `:draggable t` moves it by its header line,
 and several panels can be open at once.  The [manual](docs/manual.md) documents
 the options, lifecycle, failures and the Theme contract.
 
-The [symbol card example](examples/etaf-symbol-card.el) shows one command that
-answers "what is this symbol, how is it called here, where do I go next" in one
-keypress, using the catalog from `etaf-ui`.
+Two examples use the catalog from `etaf-ui`: the
+[symbol card](examples/etaf-symbol-card.el) answers "what is this symbol, how is
+it called here, where do I go next" in one keypress, and the
+[Pomodoro](examples/etaf-pomodoro.el) is a pinned, draggable timer with three
+styles that follows the Emacs theme.
 
 The [entry Commentary](etaf-posframe.el) is the supported API inventory.
 Requires Emacs 29.1+, ETAF and Posframe on `load-path`; install from the ETAF

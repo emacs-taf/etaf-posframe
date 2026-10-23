@@ -142,6 +142,9 @@
 (defvar-local etaf-posframe--panel nil
   "Panel shown in this buffer, or nil.")
 
+(defvar etaf-posframe--resizing nil
+  "Non-nil while a size-change pass re-fits panels.")
+
 (defvar etaf-posframe--dismissing nil
   "Non-nil while a dismissal pass runs, to avoid re-entrant hooks.")
 
@@ -167,7 +170,8 @@ They close the panel without consulting the View.")
              (list (cons 'etaf-posframe--panel etaf-posframe-panel-keys)))
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
-  buffer frame runtime parent parent-frame options timer restore-frame focused)
+  buffer frame runtime parent parent-frame options timer restore-frame focused
+  theme)
 
 ;;; Theme
 
@@ -248,7 +252,8 @@ result is a literal token plist accepted by `etaf-theme-provide'."
 
 (defconst etaf-posframe--anchors
   '(point point-top window-center window-top-center window-bottom-center
-    window-top-right window-bottom-right frame-center)
+    window-top-right window-bottom-right frame-center frame-top-right
+    frame-bottom-right)
   "Anchors accepted by `etaf-posframe-show' :at.")
 
 (defconst etaf-posframe--option-keys
@@ -290,11 +295,30 @@ result is a literal token plist accepted by `etaf-theme-provide'."
              (signal 'etaf-posframe-error
                      (list "Panel :on-close must be a function" value))))
           (:theme
-           (unless (or (null value) (proper-list-p value))
+           (unless (or (null value) (proper-list-p value)
+                       (etaf-ref-p value) (etaf-computed-p value))
              (signal 'etaf-posframe-error
-                     (list "Panel :theme must be a plist" value)))))
+                     (list "Panel :theme must be a plist, ref or computed"
+                           value)))))
         (setq result (plist-put result key value))))
     result))
+
+(defun etaf-posframe--right-corner (info bottom)
+  "Return the top-right or, with BOTTOM, bottom-right corner for INFO.
+Anchor inside the parent window's text area: posframe's corner handlers use
+the frame edge, which overlaps the parent's vertical scroll bar and shows it
+over the panel."
+  (let* ((window (plist-get info :parent-window))
+         (edges (and (window-live-p window) (window-inside-pixel-edges window)))
+         (width (or (plist-get info :posframe-width) 0))
+         (height (or (plist-get info :posframe-height) 0))
+         (margin 4))
+    (if (null edges)
+        (cons 0 0)
+      (cons (max 0 (- (nth 2 edges) width margin))
+            (if bottom
+                (max 0 (- (nth 3 edges) height margin))
+              (+ (nth 1 edges) margin))))))
 
 (defun etaf-posframe--poshandler (at)
   "Return the posframe poshandler for anchor AT."
@@ -304,9 +328,26 @@ result is a literal token plist accepted by `etaf-theme-provide'."
     ('window-center #'posframe-poshandler-window-center)
     ('window-top-center #'posframe-poshandler-window-top-center)
     ('window-bottom-center #'posframe-poshandler-window-bottom-center)
-    ('window-top-right #'posframe-poshandler-window-top-right-corner)
-    ('window-bottom-right #'posframe-poshandler-window-bottom-right-corner)
+    ('window-top-right
+     (lambda (info) (etaf-posframe--right-corner info nil)))
+    ('window-bottom-right
+     (lambda (info) (etaf-posframe--right-corner info t)))
     ('frame-center #'posframe-poshandler-frame-center)
+    ('frame-top-right
+     (lambda (info)
+       (let* ((parent-frame (plist-get info :parent-frame))
+              (width (or (plist-get info :posframe-width) 0))
+              (margin 8))
+         (cons (max 0 (- (frame-pixel-width parent-frame) width margin))
+               margin))))
+    ('frame-bottom-right
+     (lambda (info)
+       (let* ((parent-frame (plist-get info :parent-frame))
+              (width (or (plist-get info :posframe-width) 0))
+              (height (or (plist-get info :posframe-height) 0))
+              (margin 8))
+         (cons (max 0 (- (frame-pixel-width parent-frame) width margin))
+               (max 0 (- (frame-pixel-height parent-frame) height margin))))))
     ((pred functionp) at)
     (_ (signal 'etaf-posframe-error (list "Unsupported panel :at" at)))))
 
@@ -380,25 +421,41 @@ result is a literal token plist accepted by `etaf-theme-provide'."
           (cl-incf count))
         count))))
 
-(defun etaf-posframe--prepare-buffer (buffer header)
-  "Set BUFFER up as a panel surface with HEADER."
-  (with-current-buffer buffer
-    (erase-buffer)
-    (setq-local truncate-lines t)
-    (setq-local buffer-display-table
-                (copy-sequence (or buffer-display-table
-                                   standard-display-table
-                                   (make-display-table))))
-    (set-display-table-slot buffer-display-table 'truncation ?\s)
-    (setq-local header-line-format
-                (when header
-                  (concat " " (propertize header 'face 'bold))))
-    (setq-local mode-line-format nil)))
+(defun etaf-posframe--header-format (header theme width)
+  "Return HEADER as a full-width title bar for THEME and WIDTH columns."
+  (when header
+    (let* ((text (concat " " header))
+           (padding (max 0 (- width (string-width text))))
+           (bar (concat text (make-string padding ?\s))))
+      (propertize bar
+                  'face (list :background (plist-get theme :ui-panel-bg)
+                              :foreground (plist-get theme :ui-panel-fg)
+                              :weight 'bold
+                              :height 1.0)
+                  'underline (list :color (plist-get theme :ui-panel-border)
+                                   :style 'line)))))
+
+(defun etaf-posframe--prepare-buffer (buffer header theme width)
+  "Set BUFFER up as a panel surface with HEADER and THEME."
+  (let ((theme theme))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (setq-local truncate-lines t)
+      (setq-local buffer-display-table
+                  (copy-sequence (or buffer-display-table
+                                     standard-display-table
+                                     (make-display-table))))
+      (set-display-table-slot buffer-display-table 'truncation ?\s)
+      (setq-local header-line-format
+                  (etaf-posframe--header-format header theme width))
+      (setq-local mode-line-format nil)
+      (setq-local cursor-type nil)
+      (setq-local vertical-scroll-bar nil)
+      (setq-local horizontal-scroll-bar nil))))
 
 (defun etaf-posframe--frame-args (panel lines)
   "Return the `posframe-show' arguments for PANEL showing LINES of content."
   (let* ((options (etaf-posframe--panel-options panel))
-         (parent-frame (etaf-posframe--panel-parent-frame panel))
          (header (plist-get options :header))
          (at (or (plist-get options :at) 'point))
          (focusable (plist-get options :focusable)))
@@ -412,14 +469,13 @@ result is a literal token plist accepted by `etaf-theme-provide'."
            :internal-border-width 0
            :respect-header-line (and header t)
            :accept-focus (and focusable t)
-           :cursor (and focusable 'box)
-           :background-color (or (etaf-posframe--color
-                                  (face-attribute 'default :background
-                                                  nil parent-frame))
-                                 "#FFFFFF")
-           :foreground-color (or (etaf-posframe--color
-                                  (face-attribute 'default :foreground
-                                                  nil parent-frame))
+           :background-color (or (plist-get (etaf-value
+                                         (etaf-posframe--panel-theme panel))
+                                        :ui-bg)
+                             "#FFFFFF")
+           :foreground-color (or (plist-get (etaf-value
+                                             (etaf-posframe--panel-theme panel))
+                                            :ui-fg)
                                  "#000000")
            :override-parameters
            (append
@@ -433,18 +489,52 @@ result is a literal token plist accepted by `etaf-theme-provide'."
          (list :position at)
        (list :poshandler (etaf-posframe--poshandler at))))))
 
+(defun etaf-posframe--fit (panel window)
+  "Fit PANEL's Runtime to WINDOW's frame width and its body height.
+Follow the frame width, not the window's, because a transient scroll bar
+would otherwise narrow the canvas and leave a scroll bar strip on the right."
+  (let ((runtime (etaf-posframe--panel-runtime panel)))
+    (etaf-runtime-refit runtime (frame-pixel-width (window-frame window)) nil)))
+
+(defun etaf-posframe--text-height (panel window)
+  "Return the pixel height of PANEL's rendered content in WINDOW."
+  (with-current-buffer (etaf-posframe--panel-buffer panel)
+    (save-excursion
+      (goto-char (point-max))
+      (skip-chars-backward " \t\n")
+      (let ((end (point)))
+        (when (< end (point-max))
+          (delete-region end (point-max)))
+        (cdr (window-text-pixel-size window nil end nil 10000 t))))))
+
+(defun etaf-posframe--fit-height (panel window)
+  "Resize PANEL's frame to the pixel height of its rendered content.
+Lay the content out without clipping first, then size the frame to it, so a
+row taller than the canonical line is never cut."
+  (let* ((frame (window-frame window))
+         (runtime (etaf-posframe--panel-runtime panel))
+         (header (if (plist-get (etaf-posframe--panel-options panel) :header)
+                     (window-header-line-height window)
+                   0)))
+    (etaf-runtime-refit runtime (frame-pixel-width frame) 400)
+    (let ((height (+ (etaf-posframe--text-height panel window) header)))
+      (when (> height 0)
+        (set-frame-size frame (frame-pixel-width frame) height t))
+      (etaf-runtime-refit runtime (frame-pixel-width frame) nil))
+    (etaf-posframe--fit panel (or (get-buffer-window (etaf-posframe--panel-buffer panel) t)
+                                  window))))
+
 (defun etaf-posframe--show-frame (panel lines)
   "Show PANEL's frame for LINES of content and return its frame.
 Re-fit once when the settled window width changes the content height."
   (let ((args (etaf-posframe--frame-args panel lines))
-        (buffer (etaf-posframe--panel-buffer panel))
-        (runtime (etaf-posframe--panel-runtime panel)))
+        (buffer (etaf-posframe--panel-buffer panel)))
     (apply #'posframe-show buffer args)
     (dotimes (_ 2)
       (let ((window (get-buffer-window buffer t)))
         (when (window-live-p window)
           (set-window-scroll-bars window 0 nil nil)
-          (etaf-refit runtime window)
+          (etaf-posframe--fit panel window)
           (let ((settled (etaf-posframe--lines buffer)))
             (unless (= settled lines)
               (setq lines settled)
@@ -457,6 +547,8 @@ Re-fit once when the settled window width changes the content height."
     (let ((window (get-buffer-window buffer t)))
       (unless (window-live-p window)
         (signal 'etaf-posframe-error (list "Panel frame did not appear" buffer)))
+      (set-window-scroll-bars window 0 nil nil)
+      (etaf-posframe--fit-height panel window)
       (window-frame window))))
 
 (defun etaf-posframe--teardown (panel)
@@ -515,6 +607,43 @@ panel was hidden."
                         (error-message-string error)))))
     t))
 
+(defun etaf-posframe--apply-theme ()
+  "Apply the current frame Theme to every live panel."
+  (dolist (panel (copy-sequence etaf-posframe--panels))
+    (let ((theme (etaf-posframe--panel-theme panel))
+          (parent-frame (etaf-posframe--panel-parent-frame panel)))
+      (when (and (etaf-ref-p theme) (frame-live-p parent-frame))
+        (ignore-errors
+          (let ((palette (etaf-posframe-theme parent-frame)))
+            (etaf-batch (setf (etaf-value theme) palette))
+            (let ((buffer (etaf-posframe--panel-buffer panel))
+                  (header (plist-get (etaf-posframe--panel-options panel)
+                                     :header))
+                  (width (plist-get (etaf-posframe--panel-options panel)
+                                    :width)))
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer
+                  (setq-local header-line-format
+                              (etaf-posframe--header-format
+                               header palette width)))))
+            (etaf-posframe-refresh panel)))))))
+
+(defun etaf-posframe--theme-changed (&rest _)
+  "Re-derive panels' Theme after `load-theme' finished."
+  (run-at-time 0.1 nil #'etaf-posframe--apply-theme))
+
+(add-hook 'enable-theme-functions #'etaf-posframe--theme-changed)
+(add-hook 'window-size-change-functions #'etaf-posframe--size-changed)
+
+(defun etaf-posframe--size-changed (frame)
+  "Re-fit panels whose parent FRAME changed size."
+  (unless etaf-posframe--resizing
+    (let ((etaf-posframe--resizing t))
+      (dolist (panel (copy-sequence etaf-posframe--panels))
+        (when (and (eq (etaf-posframe--panel-parent-frame panel) frame)
+                   (etaf-posframe-live-p panel))
+          (ignore-errors (etaf-posframe-refresh panel)))))))
+
 (defun etaf-posframe--panel-for-buffer (buffer)
   "Return the live panel anchored to BUFFER."
   (cl-find-if (lambda (panel) (eq (etaf-posframe--panel-parent panel) buffer))
@@ -545,6 +674,9 @@ described in the package Commentary."
                          etaf-posframe-default-max-height))
          (theme (or (plist-get options :theme)
                     (etaf-posframe-theme parent-frame)))
+         (theme-ref (if (or (etaf-ref-p theme) (etaf-computed-p theme))
+                        theme
+                      (etaf-ref theme)))
          (resolved (if (functionp view) (funcall view) view))
          (options (plist-put options :width columns))
          (panel nil)
@@ -558,13 +690,15 @@ described in the package Commentary."
       (signal 'etaf-posframe-error (list "Panel View returned nil" view)))
     (setq buffer (generate-new-buffer
                   (format " *ETAF Panel %d*" (cl-incf etaf-posframe--counter))))
-    (etaf-posframe--prepare-buffer buffer (plist-get options :header))
+    (etaf-posframe--prepare-buffer buffer (plist-get options :header)
+                                   (etaf-value theme-ref)
+                                   (plist-get options :width))
     (unwind-protect
         (progn
           (etaf-mount buffer
                       (lambda ()
                         (etaf-view
-                         (etaf-posframe--surface :theme theme
+                         (etaf-posframe--surface :theme theme-ref
                                                  :content resolved)))
                       (list :viewport-width (* columns char-width)
                             :viewport-height max-height))
@@ -577,7 +711,8 @@ described in the package Commentary."
                          :runtime runtime
                          :options options
                          :parent parent-buffer
-                         :parent-frame parent-frame))
+                         :parent-frame parent-frame
+                         :theme theme-ref))
             (setf (etaf-posframe--panel-frame panel)
                   (etaf-posframe--show-frame
                    panel (max 1 (etaf-posframe--lines buffer))))
@@ -624,22 +759,19 @@ PANEL defaults to the current buffer's panel.  Return non-nil when it is live."
   (let ((panel (or panel (etaf-posframe--current-panel))))
     (when (etaf-posframe-live-p panel)
       (let* ((options (etaf-posframe--panel-options panel))
-             (header (plist-get options :header))
              (width (plist-get options :width))
              (cap (or (plist-get options :height)
                       etaf-posframe-default-max-height))
              (parent-frame (etaf-posframe--panel-parent-frame panel))
              (runtime (etaf-posframe--panel-runtime panel))
-             (buffer (etaf-posframe--panel-buffer panel))
-             (frame (etaf-posframe--panel-frame panel)))
+             (buffer (etaf-posframe--panel-buffer panel)))
         (etaf-runtime-refit runtime
                           (* width (frame-char-width parent-frame))
                           cap)
-        (let ((lines (max 1 (etaf-posframe--lines buffer))))
-          (set-frame-size frame width (+ lines (if header 1 0)))
-          (when-let* ((window (get-buffer-window buffer t)))
-            (set-window-scroll-bars window 0 nil nil)
-            (etaf-refit runtime window)))
+        (when-let* ((window (get-buffer-window buffer t)))
+          (set-window-scroll-bars window 0 nil nil)
+          (etaf-posframe--fit panel window)
+          (etaf-posframe--fit-height panel window))
         t))))
 
 (defun etaf-posframe-live-p (panel)
