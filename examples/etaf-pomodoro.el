@@ -47,20 +47,22 @@
 (defvar etaf-pomodoro--panel nil
   "Open panel, or nil.")
 
+(defvar etaf-pomodoro--rebuilding nil
+  "Non-nil while the panel is rebuilt for another style.")
+
 (defun etaf-pomodoro--clock (seconds)
   "Format SECONDS as MM:SS."
   (format "%02d:%02d" (/ seconds 60) (% seconds 60)))
 
 (defun etaf-pomodoro--colors ()
-  "Return the live card colors derived from the current frame."
+  "Return the card colors of the panel that is rendering."
   (let ((theme (or (etaf-posframe-current-theme)
                    (etaf-posframe-theme))))
     (list :ink (or (plist-get theme :ui-panel-fg) "#E9F0F4")
           :muted (or (plist-get theme :ui-muted-fg) "#93A3AA")
           :track (or (plist-get theme :ui-disabled-bg) "#39464C")
           :accent (or (plist-get theme :ui-accent) "#7FD1AE")
-          :soft (or (plist-get theme :ui-accent-soft-bg) "#233A32")
-          :border (or (plist-get theme :ui-panel-border) "#3A474E"))))
+          :soft (or (plist-get theme :ui-accent-soft-bg) "#233A32"))))
 
 (defun etaf-pomodoro--toggle ()
   "Start or pause the countdown."
@@ -87,13 +89,13 @@
             (+ (etaf-value (plist-get state :remaining)) 300)))))
 
 (defun etaf-pomodoro--next-style ()
-  "Switch to the next visual style and fit the panel again."
+  "Rebuild the panel in the next visual style."
   (when-let* ((state etaf-pomodoro--state))
     (let* ((style (plist-get state :style))
            (next (car (or (cdr (memq (etaf-value style)
                                       etaf-pomodoro--styles))
                           etaf-pomodoro--styles))))
-      (etaf-batch (setf (etaf-value style) next)))))
+      (etaf-pomodoro--rebuild next))))
 
 (defun etaf-pomodoro--tick ()
   "Advance the countdown by one second while running."
@@ -146,11 +148,11 @@
            (text :color (plist-get colors :track)
                  (expr empty-text))))))
 
-(defun etaf-pomodoro--buttons ()
-  "Return the action row."
+(defun etaf-pomodoro--buttons (on)
+  "Return the action row for the running state ON."
   (etaf-view
    (flex :column-gap '(ch 1) :align-items 'center
-         (etaf-button :label "暂停" :variant 'primary
+         (etaf-button :label (if on "暂停" "开始") :variant 'primary
                       :on-press #'etaf-pomodoro--toggle)
          (etaf-button :label "重置" :variant 'ghost
                       :on-press #'etaf-pomodoro--reset)
@@ -173,7 +175,7 @@
            (text :font-size 11 :color (plist-get colors :muted)
                  (expr (etaf-pomodoro--status left on)))
            (expr (etaf-pomodoro--progress-line fraction colors))
-           (expr (etaf-pomodoro--buttons)))))
+           (expr (etaf-pomodoro--buttons on)))))
 
 (defun etaf-pomodoro--ring-view (left on fraction colors)
   "Return the ring style view."
@@ -190,9 +192,9 @@
                                (expr (format "%d%% · %s"
                                              (round (* 100 fraction))
                                              (if on "专注中" "已暂停"))))))
-           (expr (etaf-pomodoro--buttons)))))
+           (expr (etaf-pomodoro--buttons on)))))
 
-(defun etaf-pomodoro--card (left fraction colors)
+(defun etaf-pomodoro--card (left on fraction colors)
   "Return the card style view."
   (etaf-view
    (column :item-gap '(lh 0) :width 'stretch
@@ -201,12 +203,12 @@
                  :background-color (plist-get colors :soft)
                  :border-radius '(px 6)
                  (text :font-size 11 :color (plist-get colors :accent)
-                       "番茄 · 第 1 个")
+                       "专注")
                  (text :font-size 24 :font-weight 'bold
                        :color (plist-get colors :ink)
                        (expr (etaf-pomodoro--clock left))))
            (expr (etaf-pomodoro--progress-line fraction colors))
-           (expr (etaf-pomodoro--buttons)))))
+           (expr (etaf-pomodoro--buttons on)))))
 
 (etaf-define-component etaf-pomodoro--view
     (&key remaining total running style)
@@ -222,10 +224,12 @@
      (etaf-card
       (column :item-gap '(lh 0) :width 'stretch
               (expr (pcase mode
-                      ('minimal (etaf-pomodoro--minimal left on fraction colors))
+                      ('minimal (etaf-pomodoro--minimal
+                                 left on fraction colors))
                       ('ring (etaf-pomodoro--ring-view
                               left on fraction colors))
-                      (_ (etaf-pomodoro--card left fraction colors))))
+                      (_ (etaf-pomodoro--card
+                          left on fraction colors))))
               (etaf-divider)
               (flex :justify-content 'space-between :align-items 'center
                     (etaf-label :text (format "%d 分钟"
@@ -233,8 +237,8 @@
                                 :variant 'muted)
                     (etaf-label :text "拖动标题栏 · q 关闭" :variant 'muted)))))))
 
-(defun etaf-pomodoro--open (state)
-  "Mount the panel for STATE and return it."
+(defun etaf-pomodoro--open (state &optional position)
+  "Mount the panel for STATE at POSITION and return it."
   (etaf-posframe-show
    (lambda ()
      (etaf-view
@@ -243,7 +247,7 @@
        :total (plist-get state :total)
        :running (plist-get state :running)
        :style (plist-get state :style))))
-   :at 'frame-top-right
+   :at (or position 'frame-top-right)
    :width etaf-pomodoro--width
    :header "≡ 番茄钟"
    :draggable t
@@ -251,13 +255,38 @@
    :focusable t
    :on-close #'etaf-pomodoro--close))
 
+(defun etaf-pomodoro--rebuild (style)
+  "Rebuild the panel in STYLE at its current position.
+A panel's size is settled when it opens, so another style needs a new panel.
+The countdown carries over and the refs are recreated with the new Runtime."
+  (let* ((state etaf-pomodoro--state)
+         (panel etaf-pomodoro--panel)
+         (frame (and (etaf-posframe-live-p panel)
+                     (etaf-posframe--panel-frame panel)))
+         (position (and frame (cons (frame-parameter frame 'left)
+                                    (frame-parameter frame 'top))))
+         (remaining (etaf-value (plist-get state :remaining)))
+         (total (etaf-value (plist-get state :total)))
+         (running (etaf-value (plist-get state :running))))
+    (when panel
+      (let ((etaf-pomodoro--rebuilding t))
+        (etaf-posframe-hide panel)))
+    (setq etaf-pomodoro--state
+          (list :remaining (etaf-ref remaining)
+                :total (etaf-ref total)
+                :running (etaf-ref running)
+                :style (etaf-ref style)))
+    (setq etaf-pomodoro--panel
+          (etaf-pomodoro--open etaf-pomodoro--state position))))
+
 (defun etaf-pomodoro--close (&optional _panel)
   "Stop the tick timer and forget the panel."
-  (when (timerp etaf-pomodoro--timer)
-    (cancel-timer etaf-pomodoro--timer))
-  (setq etaf-pomodoro--timer nil
-        etaf-pomodoro--state nil
-        etaf-pomodoro--panel nil))
+  (unless etaf-pomodoro--rebuilding
+    (when (timerp etaf-pomodoro--timer)
+      (cancel-timer etaf-pomodoro--timer))
+    (setq etaf-pomodoro--timer nil
+          etaf-pomodoro--state nil
+          etaf-pomodoro--panel nil)))
 
 ;;;###autoload
 (defun etaf-pomodoro-start (&optional minutes)
