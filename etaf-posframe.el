@@ -189,6 +189,12 @@
 ;; Variable: etaf-posframe-default-max-height
 ;; Maximum content lines of a new panel when `:height' is absent.
 ;;
+;; Variable: etaf-posframe-hide-inactive
+;; Hide the panels while Emacs is not the active application.  A child frame is
+;; a window of its own, so a window manager that lists windows (macOS Mission
+;; Control) would offer the panel as a target and clicking it activates Emacs
+;; instead of the application behind it.  Default t.
+;;
 ;; Variable: etaf-posframe-focus-follows-mouse
 ;; Move the input focus to a panel the mouse pointer rests on, so hovering shows
 ;; the focused border and a click does not change it.  Default t; only panels
@@ -250,6 +256,15 @@ A mouse movement inside a panel is a command, so the panel focuses itself
 without polling the pointer: it already shows the focused border when the
 pointer arrives, and a click does not change it.  Only panels that accept the
 keyboard are focused.  Nil keeps the focus on what you click."
+  :type 'boolean
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-hide-inactive t
+  "Hide panels while Emacs is not the active application.
+A child frame is a window of its own, so a window manager can list it beside the
+real windows, where clicking one activates Emacs instead of the intended
+application.  Hiding the panels while Emacs is inactive keeps them out of that
+list; they come back when Emacs is active again.  Nil keeps them visible."
   :type 'boolean
   :group 'etaf-posframe)
 
@@ -735,7 +750,8 @@ start at zero, so (0 . 0) is its first cell."
                  (not (eq selected parent))
                  (eq (frame-focus-state parent) nil))
             (etaf-posframe-hide panel)))))
-      (etaf-posframe--paint-borders))))
+      (etaf-posframe--paint-borders)
+      (etaf-posframe--sync-activation))))
 
 (defun etaf-posframe--refresh-hooks ()
   "Install the dismiss hooks exactly while a panel needs them."
@@ -1017,11 +1033,27 @@ pointer rests."
       (etaf-posframe--restore-input-focus frame)
       (setf (etaf-posframe--panel-focused panel) t))))
 
+(defun etaf-posframe--sync-activation ()
+  "Show or hide the panel frames with Emacs' activation.
+Hiding is what keeps the child frames out of the window manager's window list
+while another application is in front."
+  (when (and etaf-posframe-hide-inactive (display-graphic-p))
+    (let ((active (cl-some #'frame-focus-state (frame-list))))
+      (dolist (panel etaf-posframe--panels)
+        (let ((frame (etaf-posframe--panel-frame panel)))
+          (when (frame-live-p frame)
+            (if active
+                (unless (frame-parameter frame 'visibility)
+                  (make-frame-visible frame))
+              (when (frame-parameter frame 'visibility)
+                (make-frame-invisible frame)))))))))
+
 (defun etaf-posframe--follow-focus ()
   "Follow the pointer and the selection for the panel borders.
 A command that runs inside a panel focuses it (a mouse movement over it is such
 a command), and any selection change repaints the borders."
   (etaf-posframe--focus-buffer-panel)
+  (etaf-posframe--sync-activation)
   (unless (eq (selected-frame) etaf-posframe--painted-focus)
     (etaf-posframe--paint-borders)))
 
@@ -1133,6 +1165,7 @@ panel was hidden."
               (set-frame-parameter frame 'foreground-color
                                    (plist-get palette :ui-fg)))
             (ignore-errors (etaf-posframe--paint-border panel))
+            (ignore-errors (etaf-posframe--sync-activation))
             (let ((buffer (etaf-posframe--panel-buffer panel))
                   (header (plist-get (etaf-posframe--panel-options panel)
                                      :header))
@@ -1268,6 +1301,7 @@ described in the package Commentary."
             ;; at its new width instead of being snapped back.
             (setf (etaf-posframe--panel-settled panel) t)
             (ignore-errors (etaf-posframe--paint-border panel))
+            (ignore-errors (etaf-posframe--sync-activation))
             (with-current-buffer buffer
               (setq etaf-posframe--panel panel))
             (with-current-buffer parent-buffer

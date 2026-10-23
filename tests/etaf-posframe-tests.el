@@ -698,5 +698,30 @@ switches it without running any panel command."
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
+(ert-deftest etaf-posframe-hides-panels-while-emacs-is-inactive ()
+  "Panels become invisible while Emacs is inactive and come back after.
+A child frame is a window of its own, and a window manager that lists windows
+would offer the panel as a target instead of the application behind it."
+  (skip-unless (display-graphic-p))
+  (skip-unless etaf-posframe-hide-inactive)
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "inactive"))
+                                    :key 'inactive :width 24 :height 2
+                                    :pinned t))
+         (frame (etaf-posframe-panel-frame panel)))
+    (unwind-protect
+        (progn
+          (should (frame-parameter frame 'visibility))
+          ;; Emacs loses every focused frame.
+          (cl-letf (((symbol-function 'frame-focus-state) (lambda (&rest _) nil)))
+            (run-hooks 'post-command-hook))
+          (should-not (frame-parameter frame 'visibility))
+          ;; Emacs is active again.
+          (cl-letf (((symbol-function 'frame-focus-state) (lambda (&rest _) t)))
+            (run-hooks 'post-command-hook))
+          (should (frame-parameter frame 'visibility)))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

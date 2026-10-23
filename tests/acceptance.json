@@ -179,6 +179,11 @@
    "name": "etaf-posframe-hover-focuses-a-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A focusable panel under the mouse pointer takes the input focus on its own."
+  },
+  {
+   "name": "etaf-posframe-hides-panels-while-emacs-is-inactive",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "While Emacs has no focused frame the panels are invisible, and they reappear when Emacs is active again."
   }
  ]
 }
