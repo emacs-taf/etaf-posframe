@@ -720,5 +720,34 @@ would offer the panel as a target instead of the application behind it."
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
+(ert-deftest etaf-posframe-hover-paints-a-border-without-focus ()
+  "A pointer over a panel paints its border accent while the keyboard stays."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "hover"))
+                                    :key 'hover-border :width 24 :height 2
+                                    :pinned t :focusable t))
+         (frame (etaf-posframe-panel-frame panel)))
+    (unwind-protect
+        (progn
+          (select-frame origin)
+          (run-hooks 'post-command-hook)
+          (let ((resting (face-attribute 'child-frame-border :background frame)))
+            ;; A command inside the panel means the pointer is on it.
+            (with-current-buffer (window-buffer (frame-root-window frame))
+              (run-hooks 'post-command-hook))
+            (should (eq (selected-frame) origin))
+            (should-not (equal resting
+                               (face-attribute 'child-frame-border :background
+                                               frame)))
+            ;; Leaving removes the hint again.
+            (select-frame origin)
+            (run-hooks 'post-command-hook)
+            (should (equal resting
+                           (face-attribute 'child-frame-border :background
+                                           frame)))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

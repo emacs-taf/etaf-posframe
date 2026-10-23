@@ -297,6 +297,9 @@ from the buffer behind it and makes it read as a floating surface."
 (defvar etaf-posframe--dismissing nil
   "Non-nil while a dismissal pass runs, to avoid re-entrant hooks.")
 
+(defvar etaf-posframe--hover-panel nil
+  "Panel whose surface the mouse pointer is on, or nil.")
+
 (defvar-local etaf-posframe--parent-panel nil
   "Panel anchored to this buffer, or nil.")
 
@@ -481,7 +484,7 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 (defconst etaf-posframe--option-keys
   '(:at :cell :stack :width :height :header :draggable :pinned :focusable
     :auto-focus :dismiss :timeout :theme :on-close :key :border-width
-    :border-color :focus-border-color :fill :offset)
+    :border-color :focus-border-color :hover-border-color :fill :offset)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -539,7 +542,7 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
            (unless (memq value '(t nil))
              (signal 'etaf-posframe-error
                      (list (format "Panel :fill must be t or nil: %S" value)))))
-          ((or :border-color :focus-border-color)
+          ((or :border-color :focus-border-color :hover-border-color)
            (unless (or (null value) (stringp value))
              (signal 'etaf-posframe-error
                      (list (format "Panel %s must be a color string or nil" key)
@@ -982,33 +985,40 @@ Re-fit once when the settled window width changes the content height."
           (etaf-posframe--fit-height panel window)))
       (window-frame window))))
 
-(defun etaf-posframe--border-color (panel focused)
-  "Return PANEL's border colour, the accent colour while FOCUSED."
-  (when (or focused (not (memq :focus-border-color
-                               (etaf-posframe--panel-options panel))))
+(defun etaf-posframe--border-color (panel focused hovered)
+  "Return PANEL's border colour, the accent colour while FOCUSED or HOVERED.
+Hovering and holding the focus paint the same accent, so moving the pointer onto
+a panel and then clicking it changes nothing on screen."
+  (when (or focused hovered
+            (not (memq :focus-border-color
+                       (etaf-posframe--panel-options panel))))
     (let* ((theme-ref (etaf-posframe--panel-theme panel))
            (palette (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
-           (options (etaf-posframe--panel-options panel)))
-      (if focused
-          (if (memq :focus-border-color options)
-              (plist-get options :focus-border-color)
-            (plist-get palette :ui-accent))
-        (or (plist-get options :border-color)
-            (plist-get palette :ui-panel-border))))))
+           (options (etaf-posframe--panel-options panel))
+           (accent (if (memq :focus-border-color options)
+                       (plist-get options :focus-border-color)
+                     (plist-get palette :ui-accent))))
+      (cond (focused accent)
+            (hovered (or (plist-get options :hover-border-color) accent))
+            (t (or (plist-get options :border-color)
+                   (plist-get palette :ui-panel-border)))))))
 
 (defun etaf-posframe--paint-border (panel)
-  "Colour PANEL's border by whether it holds the input focus."
+  "Colour PANEL's border by whether it holds the focus or the pointer."
   (let ((frame (etaf-posframe--panel-frame panel)))
     (when (frame-live-p frame)
-      (when-let* ((color (etaf-posframe--border-color
-                          panel (eq (selected-frame) frame))))
-        (set-face-background (if (facep 'child-frame-border)
-                                 'child-frame-border
-                               'internal-border)
-                             color frame)))))
+      (let* ((face (if (facep 'child-frame-border)
+                       'child-frame-border
+                     'internal-border))
+             (color (etaf-posframe--border-color
+                     panel (eq (selected-frame) frame)
+                     (eq panel etaf-posframe--hover-panel))))
+        (when (and color (not (equal color (face-attribute face :background frame))))
+          (set-face-background face color frame))))))
 
 (defvar etaf-posframe--painted-focus nil
   "Frame the panel borders were last painted for.")
+
 
 (defun etaf-posframe--paint-borders ()
   "Refresh the focus border of every live panel."
@@ -1052,12 +1062,21 @@ while another application is in front."
 
 (defun etaf-posframe--follow-focus ()
   "Follow the pointer and the selection for the panel borders.
-A command that runs inside a panel focuses it (a mouse movement over it is such
-a command), and any selection change repaints the borders."
-  (etaf-posframe--focus-buffer-panel)
+A command that runs inside a panel means the pointer is on it, because a mouse
+movement over the panel is such a command; that panel gets the hover border
+without taking the keyboard.  The keyboard still moves only on a click, or on
+hover when `etaf-posframe-focus-follows-mouse' asks for it."
+  (let ((buffer (current-buffer)))
+    (setq etaf-posframe--hover-panel
+          (cl-find-if (lambda (panel)
+                        (and (plist-get (etaf-posframe--panel-options panel)
+                                        :focusable)
+                             (eq (etaf-posframe--panel-buffer panel) buffer)))
+                      etaf-posframe--panels)))
+  (when etaf-posframe-focus-follows-mouse
+    (etaf-posframe--focus-buffer-panel))
   (etaf-posframe--sync-activation)
-  (unless (eq (selected-frame) etaf-posframe--painted-focus)
-    (etaf-posframe--paint-borders)))
+  (etaf-posframe--paint-borders))
 
 (defun etaf-posframe--top-frame (&optional frame)
   "Return the top level frame above FRAME.
@@ -1140,6 +1159,8 @@ panel was hidden."
   (interactive)
   (when-let* ((panel (or panel (etaf-posframe--current-panel))))
     (setq etaf-posframe--panels (delq panel etaf-posframe--panels))
+    (when (eq panel etaf-posframe--hover-panel)
+      (setq etaf-posframe--hover-panel nil))
     (etaf-posframe--teardown panel)
     (etaf-posframe--refresh-hooks)
     (etaf-posframe--paint-borders)

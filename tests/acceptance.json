@@ -184,6 +184,11 @@
    "name": "etaf-posframe-hides-panels-while-emacs-is-inactive",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "While Emacs has no focused frame the panels are invisible, and they reappear when Emacs is active again."
+  },
+  {
+   "name": "etaf-posframe-hover-paints-a-border-without-focus",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A pointer over a panel paints its border in the hover colour while the keyboard stays where it was, and leaving restores it."
   }
  ]
 }
