@@ -641,5 +641,29 @@ switches it without running any panel command."
                      10)))
       (etaf-posframe-hide panel))))
 
+(ert-deftest etaf-posframe-offset-shifts-an-anchor ()
+  "An offset moves a panel by character cells from the anchor it chose."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (etaf-posframe-tests--top-frame))
+         (char-width (frame-char-width parent))
+         (char-height (frame-char-height parent))
+         (plain (etaf-posframe-tests--placement parent 20 2 :at 'frame-center))
+         (origin (plist-get plain :at))
+         (shifted (etaf-posframe-tests--placement parent 20 2 :at 'frame-center
+                                                  :offset '(2 . -3)))
+         (at (plist-get shifted :at)))
+    (should (equal at (cons (- (car origin) (* 3 char-width))
+                            (+ (cdr origin) (* 2 char-height)))))))
+
+(ert-deftest etaf-posframe-rejects-a-bad-offset ()
+  "An offset that is neither a pair of integers nor a function is rejected."
+  (let ((view (etaf-view (text "x"))))
+    (dolist (offset '(1 "2" (1.5 . 2) (a . b)))
+      (should (string-match-p
+               "offset"
+               (error-message-string
+                (should-error (etaf-posframe-show view :offset offset)
+                              :type 'etaf-posframe-error)))))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

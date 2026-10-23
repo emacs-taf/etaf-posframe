@@ -113,6 +113,8 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:border-color` | Border colour; defaults to the Theme's panel border. |
 | `:stack` | With an anchor `:at`, place the panel clear of the panels already there, one gap below (or above, for a `bottom-*` anchor). |
 | `:fill` | Keep the frame at `:height` rows instead of shrinking to the content, so an application with a fixed-size board gets the stage it asked for. |
+| `:offset` | `(ROWS . COLUMNS)` character cells to shift whatever `:at`, `:cell` or `:stack` chose; negative rows go up, negative columns go left.  A function is called for the pair. |
+| `:offset` | `(ROWS . COLUMNS)` character cells to shift whatever `:at` or `:cell` chose: negative rows go up, negative columns go left.  A function is called for the pair. |
 
 Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
 unsupported `:at` signal `etaf-posframe-error` before any frame is created.
@@ -193,6 +195,32 @@ Rows and columns count from zero at the top left of the window's text area and
 follow the parent frame's character metrics, so the same `:cell` lands on the
 same cell whatever the panel's own size is.  `:cell` wins over `:at`.
 
+`:offset` moves the result in character cells, so a panel can start from an
+anchor instead of a counted position:
+
+```elisp
+(etaf-posframe-show view :at 'frame-center :offset '(-1 . 0))   ;; one row up
+(etaf-posframe-show view :at 'frame-top-right :offset '(2 . -4))
+(etaf-posframe-show view :at 'frame-center :offset (lambda () (cons 0 (my-shift))))
+```
+
+It composes with `:at`, `:cell` and `:stack`, so `(:at 'frame-bottom-right
+:offset '(0 . -20))` is the bottom right corner twenty columns to the left, and
+a function lets the caller compute the pair at open time.
+
+`:offset` moves the result in character cells, so a panel can start from an
+anchor instead of a counted position:
+
+```elisp
+(etaf-posframe-show view :at 'frame-center :offset '(-1 . 0))    ;; one row up
+(etaf-posframe-show view :at 'frame-top-right :offset '(2 . -4))
+(etaf-posframe-show view :at 'frame-center :offset (lambda () (cons 0 (my-shift))))
+```
+
+It composes with `:at`, `:cell` and `:stack`: the bottom right corner twenty
+columns to the left is `:at 'frame-bottom-right :offset '(0 . -20)`, and a
+function lets the caller compute the pair when the panel opens.
+
 `:stack` turns an anchor into a run of panels: the next panel opened at the same
 anchor is placed clear of the ones already there, `etaf-posframe--stack-gap`
 pixels below (or above, when the anchor starts at the bottom edge).  It needs a
@@ -218,7 +246,10 @@ reads as a surface above the buffer rather than a hole in it.  The panel that
 holds the input focus paints its border in the Theme's accent instead, which is
 how you see where the keyboard is while several panels are open; the frame behind
 them has no border at all.  `:focus-border-color` overrides that colour and
-`(nil)` turns the hint off.  `:border-width`
+`(nil)` turns the hint off.  The accent follows the selection, so clicking a
+panel or the frame behind it moves it without running a panel command.
+
+`:border-width`
 changes or removes it and `:border-color` overrides the colour; both keep the
 content width exact, because the border is painted outside the text area.
 

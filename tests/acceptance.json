@@ -164,6 +164,16 @@
    "name": "etaf-posframe-height-fits-the-parent-frame",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A row budget taller than the parent frame is clamped so the panel stays on screen."
+  },
+  {
+   "name": "etaf-posframe-offset-shifts-an-anchor",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "An offset shifts the panel by exactly its row and column count in character cells from the anchor."
+  },
+  {
+   "name": "etaf-posframe-rejects-a-bad-offset",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "An offset that is not an integer pair or a function signals etaf-posframe-error naming the option."
   }
  ]
 }

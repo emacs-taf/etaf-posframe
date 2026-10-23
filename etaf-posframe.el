@@ -71,6 +71,10 @@
 ;;               `etaf-posframe-border-width' (1); 0 draws none.
 ;;   :border-color  Border colour, default the Theme's panel border, so the
 ;;               panel reads as a surface floating above the buffer.
+;;   :offset     (ROWS . COLUMNS) character cells to shift whatever `:at' or
+;;               `:cell' chose, so a panel can start from an anchor and move.
+;;               Negative rows go up, negative columns go left.  A function is
+;;               called for the pair, which lets a caller compute it.
 ;;   :fill       Keep the frame at the row budget instead of shrinking to the
 ;;               content, so an application with a fixed-size board fills the
 ;;               stage it asked for; the surface paints the remaining rows.
@@ -446,7 +450,7 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 (defconst etaf-posframe--option-keys
   '(:at :cell :stack :width :height :header :draggable :pinned :focusable
     :auto-focus :dismiss :timeout :theme :on-close :key :border-width
-    :border-color :focus-border-color :fill)
+    :border-color :focus-border-color :fill :offset)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -492,6 +496,13 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
            (unless (and (wholenump value) (< value 20))
              (signal 'etaf-posframe-error
                      (list (format "Panel :border-width must be 0..19 pixels: %S"
+                                   value)))))
+          (:offset
+           (unless (or (functionp value)
+                       (and (consp value) (integerp (car value))
+                            (integerp (cdr value))))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :offset must be a (ROWS . COLUMNS) pair of integers or a function returning one: %S"
                                    value)))))
           (:fill
            (unless (memq value '(t nil))
@@ -644,6 +655,18 @@ start at zero, so (0 . 0) is its first cell."
            (char-height (or (plist-get info :font-height) 0)))
       (cons (+ (nth 0 rect) (* column char-width))
             (+ (nth 1 rect) (* row char-height) (or line-prefix 0))))))
+
+(defun etaf-posframe--offset-poshandler (base offset)
+  "Return a poshandler shifting BASE by OFFSET, a (ROWS . COLUMNS) cell pair."
+  (lambda (info)
+    (let* ((position (funcall base info))
+           (cells (if (functionp offset) (funcall offset) offset))
+           (char-width (or (plist-get info :font-width)
+                           (frame-char-width (or (plist-get info :parent-frame)
+                                                 (selected-frame)))))
+           (char-height (or (plist-get info :font-height) 0)))
+      (cons (+ (car position) (* (or (cdr cells) 0) char-width))
+            (+ (cdr position) (* (or (car cells) 0) char-height))))))
 
 (defun etaf-posframe--poshandler (at)
   "Return the posframe poshandler for anchor AT."
@@ -806,14 +829,19 @@ start at zero, so (0 . 0) is its first cell."
               (snap-width . 12))
             (when (etaf-posframe--draggable-p options)
               '((drag-with-header-line . t)))))
-     (if-let* ((cell (plist-get options :cell)))
-         (list :poshandler (etaf-posframe--cell-poshandler cell))
-       (if (and (consp at) (numberp (car at)) (numberp (cdr at)))
-           (list :position at)
-         (list :poshandler
-               (if (and (plist-get options :stack) (symbolp at))
-                   (etaf-posframe--stacking-poshandler at)
-                 (etaf-posframe--poshandler at))))))))
+     (let* ((offset (plist-get options :offset))
+            (handler (cond ((plist-get options :cell)
+                            (etaf-posframe--cell-poshandler
+                             (plist-get options :cell)))
+                           ((and (consp at) (numberp (car at))
+                                 (numberp (cdr at)))
+                            (lambda (_info) at))
+                           ((and (plist-get options :stack) (symbolp at))
+                            (etaf-posframe--stacking-poshandler at))
+                           (t (etaf-posframe--poshandler at)))))
+       (list :poshandler (if offset
+                             (etaf-posframe--offset-poshandler handler offset)
+                           handler))))))
 
 (defun etaf-posframe--fit (panel)
   "Fit PANEL's Runtime to WINDOW's frame width and its body height.
