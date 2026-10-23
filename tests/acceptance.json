@@ -34,6 +34,31 @@
    "name": "etaf-posframe-toggle-hides-the-open-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "The toggle entry hides the current buffer's open panel instead of stacking a second one."
+  },
+  {
+   "name": "etaf-posframe-show-replaces-the-buffer-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A second show for the same buffer replaces the earlier panel instead of stacking two."
+  },
+  {
+   "name": "etaf-posframe-timeout-closes-the-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel with :timeout hides by itself and releases its Runtime."
+  },
+  {
+   "name": "etaf-posframe-focusable-panel-takes-and-restores-focus",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A focusable panel selects itself on open and returns focus to the previous frame on hide."
+  },
+  {
+   "name": "etaf-posframe-refresh-keeps-a-live-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Refreshing a live panel re-measures its content and reports success."
+  },
+  {
+   "name": "etaf-posframe-killing-the-parent-buffer-closes-the-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "The panel owns a kill-buffer hook in its parent buffer, so killing that buffer releases the panel."
   }
  ]
 }

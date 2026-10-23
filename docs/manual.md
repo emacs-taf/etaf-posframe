@@ -32,9 +32,12 @@ it to collect the data it shows and to refuse when there is nothing to show:
 ```
 
 `etaf-posframe-toggle` hides the current buffer's open panel instead of stacking
-a second one.  `etaf-posframe-hide` closes a panel and releases its Runtime,
-timer and frame; `etaf-posframe-panels` returns the live panels; and
-`etaf-posframe-live-p` reports whether one panel is still alive.
+a second one, and a second `etaf-posframe-show` for the same buffer replaces the
+earlier panel.  `etaf-posframe-hide` closes a panel and releases its Runtime,
+timer and frame; `etaf-posframe-panels` returns the live panels;
+`etaf-posframe-live-p` reports whether one panel is still alive; and
+`etaf-posframe-refresh` re-measures the content and fits the frame after a
+reactive View changed its height.
 
 ## Options
 
@@ -47,6 +50,7 @@ timer and frame; `etaf-posframe-panels` returns the live panels; and
 | `:draggable` | Move the panel by dragging the header.  Defaults to `:pinned`. |
 | `:pinned` | Keep the panel open regardless of `:dismiss`. |
 | `:focusable` | Give the child frame keyboard focus, so the View's `:keys`, text inputs and buttons work. |
+| `:auto-focus` | Select the panel on open so its keys work without a click.  Defaults to `:focusable`; nil leaves it unfocused until clicked. |
 | `:dismiss` | `'auto` (default) hides before the next command outside the panel, `'focus-out` hides when focus leaves, nil keeps it. |
 | `:timeout` | Seconds after which the panel hides by itself. |
 | `:theme` | ETAF UI Theme plist; defaults to `etaf-posframe-theme` for the current frame. |
@@ -63,14 +67,25 @@ window width.  Hiding deletes the frame, unmounts the Runtime and kills the
 buffer.  A failed show cleans up before re-signaling, so a stale panel is never
 returned.
 
-A panel belongs to the buffer that was current when it was shown.  When that
-buffer is killed, hide the panel explicitly; panels are not torn down by buffer
-death.
+A panel belongs to the buffer that was current when it was shown.  That buffer
+owns a `kill-buffer-hook`, so killing it hides the panel and releases its
+Runtime.  Only one panel is kept per buffer: showing another replaces the
+first.
 
 `etaf-posframe-panel-keys` is active while a focusable panel has focus and
-closes it on `q`, `ESC` and `C-g`.  The View's own `:keys` handle the rest.
-Passive panels never see the keyboard: the next command runs in the buffer that
-owns point and the panel hides.
+closes it on `q`, `ESC` and `C-g`; it outranks the renderer's own map for those
+three keys.  The View's own `:keys` handle the rest.  A focusable panel selects
+itself on open (`:auto-focus`), and hiding returns focus to the frame that was
+selected before.  Passive panels never see the keyboard: the next command runs
+in the buffer that owns point and the panel hides.
+
+## Refreshing content
+
+A reactive View repaints inside the panel, but a frame cannot resize itself when
+its content grows.  Call `etaf-posframe-refresh` after a change that alters the
+rendered height; it re-lays out the View at the panel width, fits the frame to
+the new rows and keeps the panel's position.  Content taller than `:height`
+stays clipped, so raise `:height` for panels whose content can grow.
 
 ## Sizing
 

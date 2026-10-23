@@ -49,6 +49,8 @@
 ;;   :pinned     Keep the panel open regardless of `:dismiss'.  Default nil.
 ;;   :focusable  Let the panel take keyboard focus, so its View `:keys', text
 ;;               inputs and buttons receive input.  Default nil.
+;;   :auto-focus Default `:focusable'.  Select the panel on open so its keys
+;;               work without a click; nil leaves it unfocused until clicked.
 ;;   :dismiss    'auto (default) hides before the next command outside the
 ;;               panel; 'focus-out hides when the panel loses focus; nil keeps
 ;;               it until `etaf-posframe-hide'.
@@ -72,6 +74,13 @@
 ;; Hide the current buffer's live panel, or show VIEW with OPTIONS.  Return the
 ;; new panel, or nil when it hid one.  This is the entry for a key binding that
 ;; opens and closes the same panel.
+;;
+;; Function: etaf-posframe-refresh (&optional panel)
+;;;###autoload (autoload 'etaf-posframe-refresh "etaf-posframe" nil t)
+;; Re-measure PANEL's rendered content and fit its frame.  PANEL defaults to
+;; the current buffer's panel.  Reactive Views repaint in place but cannot
+;; change the frame size themselves, so call this after content grows or
+;; shrinks.  Return non-nil when PANEL is live.
 ;;
 ;; Function: etaf-posframe-live-p (panel)
 ;; Return non-nil while PANEL's frame exists and its Runtime is mounted.
@@ -136,6 +145,15 @@
 (defvar etaf-posframe--dismissing nil
   "Non-nil while a dismissal pass runs, to avoid re-entrant hooks.")
 
+(defvar-local etaf-posframe--parent-panel nil
+  "Panel anchored to this buffer, or nil.")
+
+(defun etaf-posframe--parent-killed ()
+  "Hide the panel anchored to the buffer being killed."
+  (when (and etaf-posframe--parent-panel
+             (memq etaf-posframe--parent-panel etaf-posframe--panels))
+    (etaf-posframe-hide etaf-posframe--parent-panel)))
+
 (defvar etaf-posframe-panel-keys
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "q") #'etaf-posframe-hide)
@@ -146,10 +164,10 @@
 They close the panel without consulting the View.")
 
 (add-to-list 'emulation-mode-map-alists
-             '(etaf-posframe--panel . etaf-posframe-panel-keys))
+             (list (cons 'etaf-posframe--panel etaf-posframe-panel-keys)))
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
-  buffer frame runtime parent parent-frame options timer)
+  buffer frame runtime parent parent-frame options timer restore-frame focused)
 
 ;;; Theme
 
@@ -234,8 +252,8 @@ result is a literal token plist accepted by `etaf-theme-provide'."
   "Anchors accepted by `etaf-posframe-show' :at.")
 
 (defconst etaf-posframe--option-keys
-  '(:at :width :height :header :draggable :pinned :focusable :dismiss
-    :timeout :theme :on-close)
+  '(:at :width :height :header :draggable :pinned :focusable :auto-focus
+    :dismiss :timeout :theme :on-close)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -316,15 +334,26 @@ result is a literal token plist accepted by `etaf-theme-provide'."
           (etaf-posframe-hide panel))))))
 
 (defun etaf-posframe--focus-change ()
-  "Hide focus-out panels that no longer hold focus."
+  "Hide transient panels when focus leaves them or their parent frame."
   (unless etaf-posframe--dismissing
-    (let ((etaf-posframe--dismissing t))
+    (let ((etaf-posframe--dismissing t)
+          (selected (selected-frame)))
       (dolist (panel (copy-sequence etaf-posframe--panels))
-        (when (and (eq (plist-get (etaf-posframe--panel-options panel) :dismiss)
-                       'focus-out)
-                   (frame-live-p (etaf-posframe--panel-frame panel))
-                   (not (eq (selected-frame) (etaf-posframe--panel-frame panel))))
-          (etaf-posframe-hide panel))))))
+        (let* ((frame (etaf-posframe--panel-frame panel))
+               (parent (etaf-posframe--panel-parent-frame panel))
+               (dismiss (plist-get (etaf-posframe--panel-options panel) :dismiss)))
+          (cond
+           ((not (frame-live-p frame)))
+           ((eq selected frame)
+            (setf (etaf-posframe--panel-focused panel) t))
+           ((and (etaf-posframe--panel-focused panel)
+                 (memq dismiss '(auto focus-out)))
+            (etaf-posframe-hide panel))
+           ((and (eq dismiss 'auto)
+                 (not (plist-get (etaf-posframe--panel-options panel) :pinned))
+                 (not (eq selected parent))
+                 (eq (frame-focus-state parent) nil))
+            (etaf-posframe-hide panel))))))))
 
 (defun etaf-posframe--refresh-hooks ()
   "Install the dismiss hooks exactly while a panel needs them."
@@ -332,8 +361,8 @@ result is a literal token plist accepted by `etaf-theme-provide'."
       (add-hook 'pre-command-hook #'etaf-posframe--pre-command)
     (remove-hook 'pre-command-hook #'etaf-posframe--pre-command))
   (if (cl-some (lambda (panel)
-                 (eq (plist-get (etaf-posframe--panel-options panel) :dismiss)
-                     'focus-out))
+                 (memq (plist-get (etaf-posframe--panel-options panel) :dismiss)
+                       '(auto focus-out)))
                etaf-posframe--panels)
       (add-hook 'after-focus-change-function #'etaf-posframe--focus-change)
     (remove-hook 'after-focus-change-function #'etaf-posframe--focus-change)))
@@ -433,7 +462,17 @@ Re-fit once when the settled window width changes the content height."
 (defun etaf-posframe--teardown (panel)
   "Release PANEL's frame, Runtime and timer without callbacks."
   (let ((buffer (etaf-posframe--panel-buffer panel))
-        (frame (etaf-posframe--panel-frame panel)))
+        (frame (etaf-posframe--panel-frame panel))
+        (parent (etaf-posframe--panel-parent panel))
+        (restore (etaf-posframe--panel-restore-frame panel)))
+    (when (buffer-live-p parent)
+      (with-current-buffer parent
+        (remove-hook 'kill-buffer-hook #'etaf-posframe--parent-killed t)
+        (when (eq etaf-posframe--parent-panel panel)
+          (setq etaf-posframe--parent-panel nil))))
+    (when (and (frame-live-p restore)
+               (eq (selected-frame) frame))
+      (select-frame restore))
     (when-let* ((timer (etaf-posframe--panel-timer panel)))
       (cancel-timer timer)
       (setf (etaf-posframe--panel-timer panel) nil))
@@ -448,13 +487,23 @@ Re-fit once when the settled window width changes the content height."
     (ignore frame)))
 
 ;;;###autoload
+(defun etaf-posframe--focus (panel)
+  "Select PANEL's frame and window, remembering the frame to restore."
+  (let ((frame (etaf-posframe--panel-frame panel)))
+    (when (frame-live-p frame)
+      (setf (etaf-posframe--panel-restore-frame panel) (selected-frame))
+      (select-frame frame)
+      (when-let* ((window (get-buffer-window (etaf-posframe--panel-buffer panel) t)))
+        (select-window window)
+        (set-window-point window (point-min))
+        (setf (etaf-posframe--panel-focused panel) t)))))
+
 (defun etaf-posframe-hide (&optional panel)
   "Hide PANEL and release its Runtime, timer and frame.
 PANEL defaults to the panel of the current buffer.  Return non-nil when a live
 panel was hidden."
   (interactive)
-  (when-let* ((panel (or panel
-                         (etaf-posframe--panel-for-buffer (current-buffer)))))
+  (when-let* ((panel (or panel (etaf-posframe--current-panel))))
     (setq etaf-posframe--panels (delq panel etaf-posframe--panels))
     (etaf-posframe--teardown panel)
     (etaf-posframe--refresh-hooks)
@@ -470,6 +519,11 @@ panel was hidden."
   "Return the live panel anchored to BUFFER."
   (cl-find-if (lambda (panel) (eq (etaf-posframe--panel-parent panel) buffer))
               etaf-posframe--panels))
+
+(defun etaf-posframe--current-panel ()
+  "Return the panel of the current buffer, panel buffer included."
+  (or etaf-posframe--panel
+      (etaf-posframe--panel-for-buffer (current-buffer))))
 
 ;;;###autoload
 (defun etaf-posframe-show (view &rest options)
@@ -498,6 +552,8 @@ described in the package Commentary."
     (unless (display-graphic-p)
       (signal 'etaf-posframe-error
               (list "ETAF panels need a graphical frame")))
+    (when-let* ((previous (etaf-posframe--panel-for-buffer parent-buffer)))
+      (etaf-posframe-hide previous))
     (unless resolved
       (signal 'etaf-posframe-error (list "Panel View returned nil" view)))
     (setq buffer (generate-new-buffer
@@ -527,6 +583,9 @@ described in the package Commentary."
                    panel (max 1 (etaf-posframe--lines buffer))))
             (with-current-buffer buffer
               (setq etaf-posframe--panel panel))
+            (with-current-buffer parent-buffer
+              (setq etaf-posframe--parent-panel panel)
+              (add-hook 'kill-buffer-hook #'etaf-posframe--parent-killed nil t))
             (push panel etaf-posframe--panels)
             (when-let* ((timeout (plist-get options :timeout)))
               (setf (etaf-posframe--panel-timer panel)
@@ -534,6 +593,11 @@ described in the package Commentary."
                                  (lambda ()
                                    (when (memq panel etaf-posframe--panels)
                                      (etaf-posframe-hide panel))))))
+            (when (and (plist-get options :focusable)
+                       (if (plist-member options :auto-focus)
+                           (plist-get options :auto-focus)
+                         t))
+              (etaf-posframe--focus panel))
             (etaf-posframe--refresh-hooks)
             panel))
       (unless panel
@@ -548,9 +612,35 @@ described in the package Commentary."
 (defun etaf-posframe-toggle (view &rest options)
   "Hide the current buffer's live panel, or show VIEW with OPTIONS.
 Return the new panel, or nil when it hid one."
-  (if-let* ((panel (etaf-posframe--panel-for-buffer (current-buffer))))
+  (if-let* ((panel (etaf-posframe--current-panel)))
       (progn (etaf-posframe-hide panel) nil)
     (apply #'etaf-posframe-show view options)))
+
+;;;###autoload
+(defun etaf-posframe-refresh (&optional panel)
+  "Re-measure PANEL's content and fit its frame.
+PANEL defaults to the current buffer's panel.  Return non-nil when it is live."
+  (interactive)
+  (let ((panel (or panel (etaf-posframe--current-panel))))
+    (when (etaf-posframe-live-p panel)
+      (let* ((options (etaf-posframe--panel-options panel))
+             (header (plist-get options :header))
+             (width (plist-get options :width))
+             (cap (or (plist-get options :height)
+                      etaf-posframe-default-max-height))
+             (parent-frame (etaf-posframe--panel-parent-frame panel))
+             (runtime (etaf-posframe--panel-runtime panel))
+             (buffer (etaf-posframe--panel-buffer panel))
+             (frame (etaf-posframe--panel-frame panel)))
+        (etaf-runtime-refit runtime
+                          (* width (frame-char-width parent-frame))
+                          cap)
+        (let ((lines (max 1 (etaf-posframe--lines buffer))))
+          (set-frame-size frame width (+ lines (if header 1 0)))
+          (when-let* ((window (get-buffer-window buffer t)))
+            (set-window-scroll-bars window 0 nil nil)
+            (etaf-refit runtime window)))
+        t))))
 
 (defun etaf-posframe-live-p (panel)
   "Return non-nil while PANEL's frame exists and its Runtime is mounted."
