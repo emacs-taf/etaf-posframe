@@ -9,6 +9,9 @@
   laid out again, the content reflows, the title bar repaints to the new column
   count and the height follows the new content.  The width is remembered across
   `etaf-posframe-refresh' instead of snapping back to the opening columns.
+- A returned panel prints as one readable line.  Its Runtime and Theme ref
+  used to live in the struct, so printing the value of an
+  `etaf-posframe-show` call (`C-x C-e`, a log line) followed a cycle.
 - A panel that would fit itself more than 20 times in a second backs off for
   two seconds and reports it, so a condition that keeps resizing it cannot
   spin the CPU.

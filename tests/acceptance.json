@@ -79,6 +79,11 @@
    "name": "etaf-posframe-frame-adopts-a-shorter-height",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A frame shortened below the rendered content becomes the new row budget, so a panel clips instead of growing back."
+  },
+  {
+   "name": "etaf-posframe-panel-prints-without-recursing",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Printing a returned panel terminates, so evaluating an etaf-posframe-show call in a buffer cannot loop until memory runs out."
   }
  ]
 }

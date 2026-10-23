@@ -93,9 +93,13 @@
   "A panel with :timeout hides by itself."
   (skip-unless (display-graphic-p))
   (let* ((view (etaf-view (text "panel")))
-         (panel (etaf-posframe-show view :width 24 :height 3 :timeout 0.2)))
+         (panel (etaf-posframe-show view :width 24 :height 3 :timeout 0.2))
+         (deadline (+ (float-time) 3)))
     (should (etaf-posframe-live-p panel))
-    (sleep-for 0.5)
+    ;; Poll instead of sleeping a fixed span: a busy session runs the hide
+    ;; timer late, and the panel still has to close.
+    (while (and (etaf-posframe-live-p panel) (< (float-time) deadline))
+      (sleep-for 0.05))
     (should-not (etaf-posframe-live-p panel))
     (should-not (etaf-posframe-panels))))
 
@@ -244,6 +248,23 @@ mismatch left empty frame to the right of the canvas."
           (redisplay t)
           (sleep-for 0.4)
           (should (= 3 (window-body-height window))))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-panel-prints-without-recursing ()
+  "Printing a panel finishes, so evaluating a show call cannot hang Emacs.
+`C-x C-e' prints the returned panel into the buffer; a Runtime or Theme ref
+slot made that print follow a cycle until Emacs ran out of memory."
+  (skip-unless (display-graphic-p))
+  (let ((panel (etaf-posframe-show (etaf-view (text "panel"))
+                                   :width 20 :height 2)))
+    (unwind-protect
+        (let ((text (with-timeout (2 :print-did-not-finish)
+                      (let ((print-circle nil)
+                            (print-level nil)
+                            (print-length nil))
+                        (prin1-to-string panel)))))
+          (should (stringp text))
+          (should (string-match-p "etaf-posframe--panel" text)))
       (etaf-posframe-hide panel))))
 
 (provide 'etaf-posframe-tests)

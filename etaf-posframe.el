@@ -173,8 +173,29 @@ They close the panel without consulting the View.")
              (list (cons 'etaf-posframe--panel etaf-posframe-panel-keys)))
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
-  buffer frame runtime parent parent-frame options timer restore-frame focused
-  theme fit-timer settled fit-window fit-count fit-muted-until)
+  buffer frame parent parent-frame options timer restore-frame focused
+  fit-timer settled fit-window fit-count fit-muted-until)
+
+;; A panel is returned to callers, so it must print: the Runtime and the Theme
+;; ref are cyclic (refs, keymaps, closures), and `prin1' on them loops until
+;; Emacs runs out of memory.  Both live beside the panel buffer instead and are
+;; looked up here; the panel itself only keeps printable slots (buffers,
+;; frames, a data plist, timers).
+
+(defvar-local etaf-posframe--theme-ref nil
+  "Theme ref of the panel mounted in this buffer.")
+
+(defun etaf-posframe--panel-runtime (panel)
+  "Return PANEL's mounted Runtime.
+It is looked up from the panel buffer, so the panel struct stays printable."
+  (let ((buffer (etaf-posframe--panel-buffer panel)))
+    (and (buffer-live-p buffer) (etaf-runtime-for-buffer buffer))))
+
+(defun etaf-posframe--panel-theme (panel)
+  "Return PANEL's Theme ref, or nil when the panel is not live."
+  (let ((buffer (etaf-posframe--panel-buffer panel)))
+    (and (buffer-live-p buffer)
+         (buffer-local-value 'etaf-posframe--theme-ref buffer))))
 
 (defconst etaf-posframe--fit-limit 20
   "Fits a panel allows within one second before it backs off.")
@@ -763,13 +784,15 @@ described in the package Commentary."
             (unless runtime
               (signal 'etaf-posframe-error
                       (list "Panel View did not mount" view)))
+            ;; The Theme ref lives beside the panel buffer: the panel struct
+            ;; stays printable, and the frame arguments read the same ref.
+            (with-current-buffer buffer
+              (setq etaf-posframe--theme-ref theme-ref))
             (setq panel (etaf-posframe--make-panel
                          :buffer buffer
-                         :runtime runtime
                          :options options
                          :parent parent-buffer
-                         :parent-frame parent-frame
-                         :theme theme-ref))
+                         :parent-frame parent-frame))
             (setf (etaf-posframe--panel-frame panel)
                   (etaf-posframe--show-frame
                    panel (max 1 (etaf-posframe--lines buffer))))
