@@ -685,12 +685,16 @@ switches it without running any panel command."
           (with-current-buffer (window-buffer (frame-root-window frame))
             (run-hooks 'post-command-hook))
           (should (eq (selected-frame) frame))
-          ;; The timer is the fallback when no event arrives: answer its query.
+          ;; A passive panel never takes the focus from the pointer.
           (select-frame origin)
-          (cl-letf (((symbol-function 'mouse-pixel-position)
-                     (lambda () (cons frame '(10 . 10)))))
-            (sleep-for (+ 0.2 etaf-posframe-hover-interval))
-            (should (eq (selected-frame) frame))))
+          (etaf-posframe-hide panel)
+          (setq panel (etaf-posframe-show (etaf-view (text "passive"))
+                                          :key 'hover :width 24 :height 2
+                                          :pinned t :focusable nil))
+          (setq frame (etaf-posframe-panel-frame panel))
+          (with-current-buffer (window-buffer (frame-root-window frame))
+            (run-hooks 'post-command-hook))
+          (should (eq (selected-frame) origin)))
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
