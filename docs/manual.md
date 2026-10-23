@@ -246,11 +246,16 @@ reads as a surface above the buffer rather than a hole in it.  The panel that
 holds the input focus paints its border in the Theme's accent instead, which is
 how you see where the keyboard is while several panels are open; the frame behind
 them has no border at all.  `:focus-border-color` overrides that colour and
-`(nil)` turns the hint off.  With `etaf-posframe-focus-follows-mouse` (the
-default), a panel the pointer enters takes the focus: the mouse movement is a
-command inside the panel, so no polling is involved and idle panels cost
-nothing.  The border is then already in the focused colour before a click and
-does not change under the pointer.  The accent follows the selection, so clicking a
+`(nil)` turns the hint off.  Clicking a panel focuses it and the border follows
+the selection, so the hint always matches where the keyboard goes.
+
+`etaf-posframe-focus-follows-mouse` (default nil) additionally focuses a panel
+when a mouse event lands inside it.  It is off by default because Emacs cannot
+otherwise see the pointer over a child frame: `mouse-autoselect-window` and
+`focus-follows-mouse` act on the position Emacs reports, and over a child frame
+on macOS that position is the parent frame.  A pointer that enters and stops
+without an event therefore never focuses the panel, so relying on it would be
+unpredictable.  The accent follows the selection, so clicking a
 panel or the frame behind it moves it without running a panel command.
 
 `:border-width`

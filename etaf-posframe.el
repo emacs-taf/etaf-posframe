@@ -250,12 +250,14 @@ A light panel keeps a faint grey so it still reads as a surface."
   :type 'number
   :group 'etaf-posframe)
 
-(defcustom etaf-posframe-focus-follows-mouse t
+(defcustom etaf-posframe-focus-follows-mouse nil
   "Move the input focus to a panel the mouse pointer enters.
-A mouse movement inside a panel is a command, so the panel focuses itself
-without polling the pointer: it already shows the focused border when the
-pointer arrives, and a click does not change it.  Only panels that accept the
-keyboard are focused.  Nil keeps the focus on what you click."
+The focus comes from a mouse movement that lands inside the panel, because Emacs
+cannot otherwise see the pointer over a child frame: `mouse-autoselect-window'
+and `focus-follows-mouse' act on the position Emacs reports, which is the parent
+frame.  A pointer that enters and stops without an event therefore does not
+focus the panel, and this is why it is off by default.  Only panels that accept
+the keyboard are focused; nil keeps the focus on what you click."
   :type 'boolean
   :group 'etaf-posframe)
 

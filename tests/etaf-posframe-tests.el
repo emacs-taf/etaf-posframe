@@ -668,10 +668,12 @@ switches it without running any panel command."
                               :type 'etaf-posframe-error)))))))
 
 (ert-deftest etaf-posframe-hover-focuses-a-panel ()
-  "A panel under the mouse pointer takes the focus by itself."
+  "An event landing in a panel focuses it, and a passive panel never takes it."
   (skip-unless (display-graphic-p))
-  (skip-unless etaf-posframe-focus-follows-mouse)
-  (let* ((origin (etaf-posframe-tests--top-frame))
+  ;; The behaviour is opt-in: a pointer reading cannot be relied on for child
+  ;; frames, so the panel is focused by an event that lands in it.
+  (let* ((etaf-posframe-focus-follows-mouse t)
+         (origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "hover"))
                                     :key 'hover :width 24 :height 2
                                     :pinned t :focusable t))
@@ -679,23 +681,20 @@ switches it without running any panel command."
     (unwind-protect
         (progn
           (select-frame origin)
-          ;; A command running inside the panel focuses it, which is what a
-          ;; mouse movement over the panel does.
-          (select-frame origin)
           (with-current-buffer (window-buffer (frame-root-window frame))
             (run-hooks 'post-command-hook))
           (should (eq (selected-frame) frame))
           ;; A passive panel never takes the focus from the pointer.
-          (select-frame origin)
           (etaf-posframe-hide panel)
           (setq panel (etaf-posframe-show (etaf-view (text "passive"))
                                           :key 'hover :width 24 :height 2
-                                          :pinned t :focusable nil))
-          (setq frame (etaf-posframe-panel-frame panel))
+                                          :pinned t :focusable nil)
+                frame (etaf-posframe-panel-frame panel))
+          (select-frame origin)
           (with-current-buffer (window-buffer (frame-root-window frame))
             (run-hooks 'post-command-hook))
           (should (eq (selected-frame) origin)))
-      (etaf-posframe-hide panel)
+      (ignore-errors (etaf-posframe-hide panel))
       (ignore-errors (select-frame-set-input-focus origin)))))
 
 (ert-deftest etaf-posframe-hides-panels-while-emacs-is-inactive ()
@@ -712,11 +711,9 @@ would offer the panel as a target instead of the application behind it."
     (unwind-protect
         (progn
           (should (frame-parameter frame 'visibility))
-          ;; Emacs loses every focused frame.
           (cl-letf (((symbol-function 'frame-focus-state) (lambda (&rest _) nil)))
             (run-hooks 'post-command-hook))
           (should-not (frame-parameter frame 'visibility))
-          ;; Emacs is active again.
           (cl-letf (((symbol-function 'frame-focus-state) (lambda (&rest _) t)))
             (run-hooks 'post-command-hook))
           (should (frame-parameter frame 'visibility)))

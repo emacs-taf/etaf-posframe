@@ -2,10 +2,12 @@
 
 ## Unreleased
 
-- A panel the mouse pointer enters takes the input focus
-  (`etaf-posframe-focus-follows-mouse`, default on), so hovering already shows
-  the focused border and clicking it does not change the border again.  The
-  focus comes from the mouse event itself, not from polling the pointer.
+- Panels hide while Emacs is inactive, so a window manager that lists child
+  frames (macOS Mission Control) cannot offer them in place of the application
+  behind them; `etaf-posframe-hide-inactive` turns it off.
+- `etaf-posframe-focus-follows-mouse` focuses a panel from an event that lands
+  inside it.  It defaults to nil: Emacs reports the parent frame for a pointer
+  over a child frame, so a hover cannot be detected reliably.
 
 - `:offset` shifts a panel by `(ROWS . COLUMNS)` character cells from whatever
   `:at`, `:cell` or `:stack` chose, so a caller writes "centred, one row up"
