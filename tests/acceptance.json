@@ -154,6 +154,16 @@
    "name": "etaf-posframe-focus-shows-in-the-border",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "The panel holding the input focus paints its border in the theme accent while the others keep the resting border colour."
+  },
+  {
+   "name": "etaf-posframe-fill-keeps-the-row-budget",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel with :fill keeps the row budget it asked for although its content is shorter."
+  },
+  {
+   "name": "etaf-posframe-height-fits-the-parent-frame",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A row budget taller than the parent frame is clamped so the panel stays on screen."
   }
  ]
 }

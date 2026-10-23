@@ -71,6 +71,9 @@
 ;;               `etaf-posframe-border-width' (1); 0 draws none.
 ;;   :border-color  Border colour, default the Theme's panel border, so the
 ;;               panel reads as a surface floating above the buffer.
+;;   :fill       Keep the frame at the row budget instead of shrinking to the
+;;               content, so an application with a fixed-size board fills the
+;;               stage it asked for; the surface paints the remaining rows.
 ;;   :stack      With an anchor `:at', keep the panel clear of live panels at
 ;;               that anchor: stack downward from a top or centre anchor and
 ;;               upward from a bottom one, `etaf-posframe--stack-gap' apart.
@@ -124,6 +127,8 @@
 ;;   :header     Header text; default `:title'.
 ;;   :focusable  Give the panel the keyboard, default t.
 ;;   :key        A key string that `etaf-posframe-app-map' binds to this app.
+;;   :fill       Keep the frame at `:height' rows instead of shrinking to the
+;;               content, which is what a game board wants.
 ;;   :require    Feature to load before creating a session, when the package is
 ;;               not loaded yet.
 ;;
@@ -441,7 +446,7 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 (defconst etaf-posframe--option-keys
   '(:at :cell :stack :width :height :header :draggable :pinned :focusable
     :auto-focus :dismiss :timeout :theme :on-close :key :border-width
-    :border-color :focus-border-color)
+    :border-color :focus-border-color :fill)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -488,6 +493,10 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
              (signal 'etaf-posframe-error
                      (list (format "Panel :border-width must be 0..19 pixels: %S"
                                    value)))))
+          (:fill
+           (unless (memq value '(t nil))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :fill must be t or nil: %S" value)))))
           ((or :border-color :focus-border-color)
            (unless (or (null value) (stringp value))
              (signal 'etaf-posframe-error
@@ -841,8 +850,11 @@ already has is what turns one resize into a stream of size-change hooks."
          (header (if (plist-get options :header)
                      (window-header-line-height window)
                    0))
-         (height (min (+ (or (etaf-posframe--text-height panel window) 0) header)
-                      (+ (* (etaf-posframe--row-budget panel) line) header))))
+         (limit (+ (* (etaf-posframe--row-budget panel) line) header))
+         (content (+ (or (etaf-posframe--text-height panel window) 0) header))
+         ;; `:fill' keeps the frame at the row budget, so an application with a
+         ;; fixed-size board gets a full stage and the surface fills the rest.
+         (height (if (plist-get options :fill) limit (min content limit))))
     (when (and width (> height 0)
                (or (/= width (frame-pixel-width frame))
                    (/= height (frame-pixel-height frame))))
@@ -920,6 +932,19 @@ Re-fit once when the settled window width changes the content height."
   "Refresh the focus border of every live panel."
   (dolist (panel etaf-posframe--panels)
     (ignore-errors (etaf-posframe--paint-border panel))))
+
+(defun etaf-posframe--top-frame (&optional frame)
+  "Return the top level frame above FRAME.
+A panel is never derived from another panel's frame: a child frame, possibly a
+stale one, would give it that frame's face metrics and colours."
+  (let ((frame (or frame (selected-frame))))
+    (while (and (frame-live-p frame) (frame-parent frame))
+      (setq frame (frame-parent frame)))
+    (if (frame-live-p frame)
+        frame
+      (or (cl-find-if (lambda (candidate) (null (frame-parent candidate)))
+                      (frame-list))
+          (selected-frame)))))
 
 (defun etaf-posframe--restore-input-focus (frame)
   "Select FRAME and give it the window system's input focus.
@@ -1082,7 +1107,7 @@ described in the package Commentary."
       (set-buffer called-buffer)))
   (let* ((options (etaf-posframe--default-dismiss
                    (etaf-posframe--validate (copy-sequence options))))
-         (parent-frame (selected-frame))
+         (parent-frame (etaf-posframe--top-frame))
          (parent-buffer (etaf-posframe--anchor-buffer (current-buffer)))
          (char-width (frame-char-width parent-frame))
          (available (max 20 (- (/ (frame-pixel-width parent-frame) char-width)
@@ -1090,15 +1115,20 @@ described in the package Commentary."
          (columns (min (or (plist-get options :width)
                            etaf-posframe-default-width)
                        available))
-         (max-height (or (plist-get options :height)
-                         etaf-posframe-default-max-height))
+         ;; A panel must fit its parent frame: the row budget is clamped to the
+         ;; rows the frame can show, so a tall game panel cannot run off screen.
+         (capacity (max 4 (floor (- (frame-pixel-height parent-frame) 32)
+                                 (float (frame-char-height parent-frame)))))
+         (max-height (min (or (plist-get options :height)
+                              etaf-posframe-default-max-height)
+                          capacity))
          (theme (or (plist-get options :theme)
                     (etaf-posframe-theme parent-frame)))
          (theme-ref (if (or (etaf-ref-p theme) (etaf-computed-p theme))
                         theme
                       (etaf-ref theme)))
          (resolved (if (functionp view) (funcall view) view))
-         (options (plist-put options :width columns))
+         (options (plist-put (plist-put options :width columns) :height max-height))
          (options (plist-put options :pixel-width (* columns char-width)))
          (panel nil)
          buffer)
@@ -1471,6 +1501,7 @@ Without ID, prompt among the registered applications."
                               etaf-posframe-default-max-height)
                   :header (or (plist-get record :header)
                               (plist-get record :title))
+                  :fill (if (plist-member record :fill) (plist-get record :fill) nil)
                   :pinned t
                   :focusable (if (plist-member record :focusable)
                                  (plist-get record :focusable)

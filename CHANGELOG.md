@@ -12,6 +12,11 @@
 - Closing a focused panel hands the window system's input focus back to the
   frame it was opened from.  `select-frame' alone left macOS without a key
   window, so the next command froze until the user clicked the parent frame.
+- `:fill t` keeps a panel at its row budget instead of shrinking to its content,
+  for applications whose board has a fixed size; the surface paints the rest of
+  the stage.
+- A row budget taller than the parent frame is clamped so the panel stays on
+  screen.
 - The panel holding the input focus paints its border in the Theme accent, so
   the active application is visible among several open panels;
   `:focus-border-color` overrides it and nil turns it off.

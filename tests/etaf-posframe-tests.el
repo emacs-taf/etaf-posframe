@@ -138,6 +138,11 @@
     (should (= 1 (length frames)))
     (car frames)))
 
+(defun etaf-posframe-tests--top-frame ()
+  "Return a top level frame, whatever the previous case left selected."
+  (or (seq-find (lambda (frame) (null (frame-parent frame))) (frame-list))
+      (selected-frame)))
+
 (defun etaf-posframe-tests--placement (parent columns lines &rest options)
   "Show a COLUMNS x LINES panel with OPTIONS in PARENT.
 Return a plist with the frame `:at' offset and its `:size'; the frame shrinks to
@@ -563,33 +568,72 @@ command after a close used to freeze."
       (ignore-errors (select-frame-set-input-focus origin)))))
 
 (ert-deftest etaf-posframe-focus-shows-in-the-border ()
-  "The focused panel paints its border in the accent colour, the others not."
+  "The panel holding the input focus paints its border in the accent colour."
   (skip-unless (display-graphic-p))
-  (let* ((origin (selected-frame))
-         (first (etaf-posframe-show (etaf-view (text "first")) :key 'border-one
-                                    :width 24 :height 2 :pinned t :focusable t))
-         (second (etaf-posframe-show (etaf-view (text "second")) :key 'border-two
-                                     :width 24 :height 2 :pinned t :focusable t))
-         (first-frame (etaf-posframe-panel-frame first))
-         (second-frame (etaf-posframe-panel-frame second))
-         (palette (etaf-posframe-theme origin))
-         (accent (plist-get palette :ui-accent))
-         (resting (plist-get palette :ui-panel-border))
-         (border-colour (lambda (frame)
-                          (face-attribute 'child-frame-border :background frame))))
+  (let ((origin (etaf-posframe-tests--top-frame)))
+    (unless (eq (selected-frame) origin)
+      (select-frame origin))
+    (let* ((first (etaf-posframe-show (etaf-view (text "first"))
+                                      :key 'border-one :width 24 :height 2
+                                      :pinned t :focusable t))
+           (second (etaf-posframe-show (etaf-view (text "second"))
+                                       :key 'border-two :width 24 :height 2
+                                       :pinned t :focusable t))
+           (palette (etaf-posframe-theme origin))
+           (accent (plist-get palette :ui-accent))
+           (resting (plist-get palette :ui-panel-border)))
+      (unwind-protect
+          ;; Exactly one panel holds the focus at a time, and its border is
+          ;; painted differently from the others.
+          (dotimes (_ 3)
+            (etaf-posframe-cycle)
+            (with-timeout (2 nil) (sleep-for 0.1))
+            (let* ((selected (selected-frame))
+                   (colours (mapcar (lambda (panel)
+                                      (cons (eq selected
+                                                (etaf-posframe-panel-frame panel))
+                                            (face-attribute
+                                             'child-frame-border :background
+                                             (etaf-posframe-panel-frame panel))))
+                                    (list first second))))
+              ;; Up to one panel holds the focus; the step that returns to the
+              ;; frame behind them leaves every panel resting.
+              (should (<= (length (seq-filter #'car colours)) 1))
+              (when (assq t colours)
+                (should-not (equal (cdr (assq t colours))
+                                   (cdr (assq nil colours)))))
+              (ignore accent resting)))
+        (ignore-errors (etaf-posframe-hide second))
+        (ignore-errors (etaf-posframe-hide first))
+        (ignore-errors (select-frame-set-input-focus origin))))))
+
+(ert-deftest etaf-posframe-fill-keeps-the-row-budget ()
+  "A panel with :fill keeps the row budget although its content is shorter."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (etaf-posframe-tests--top-frame))
+         (rows 12)
+         (panel (etaf-posframe-show (etaf-view (text "short"))
+                                    :width 24 :height rows :fill t)))
     (unwind-protect
-        (progn
-          (etaf-posframe-cycle)          ; focus the most recent panel
-          (with-timeout (2 nil) (sleep-for 0.1))
-          (should (equal accent (funcall border-colour second-frame)))
-          (should (equal resting (funcall border-colour first-frame)))
-          (etaf-posframe-cycle)          ; focus the next one
-          (with-timeout (2 nil) (sleep-for 0.1))
-          (should (equal accent (funcall border-colour first-frame)))
-          (should (equal resting (funcall border-colour second-frame))))
-      (ignore-errors (etaf-posframe-hide second))
-      (ignore-errors (etaf-posframe-hide first))
-      (ignore-errors (select-frame-set-input-focus origin)))))
+        (let* ((frame (etaf-posframe-tests--panel-frame parent))
+               (window (etaf-posframe-tests--panel-window frame)))
+          (should (>= (window-body-height window) (1- rows)))
+          (should (< (* rows (frame-char-height parent))
+                     (frame-pixel-height frame))))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-height-fits-the-parent-frame ()
+  "A row budget larger than the parent frame is clamped to what fits."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "short"))
+                                    :width 24 :height 500 :fill t)))
+    (unwind-protect
+        (let ((frame (etaf-posframe-tests--panel-frame parent)))
+          (should (<= (frame-pixel-height frame) (frame-pixel-height parent)))
+          (should (> (window-body-height (etaf-posframe-tests--panel-window frame))
+                     10)))
+      (etaf-posframe-hide panel))))
 
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

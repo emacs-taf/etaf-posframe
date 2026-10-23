@@ -112,6 +112,7 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:border-width` | Border around the frame in pixels, default `etaf-posframe-border-width` (1).  `0` draws none. |
 | `:border-color` | Border colour; defaults to the Theme's panel border. |
 | `:stack` | With an anchor `:at`, place the panel clear of the panels already there, one gap below (or above, for a `bottom-*` anchor). |
+| `:fill` | Keep the frame at `:height` rows instead of shrinking to the content, so an application with a fixed-size board gets the stage it asked for. |
 
 Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
 unsupported `:at` signal `etaf-posframe-error` before any frame is created.
@@ -245,7 +246,10 @@ in the buffer that owns point and the panel hides.
 
 A panel renders at the width it is given, so its height follows the content.
 `:height` caps that height; content above the cap is clipped by the Runtime's
-viewport.  Width is clamped to the parent frame, so a wide request still fits.
+viewport, and a budget taller than the parent frame is clamped to the rows that
+fit on screen.  A panel that must be exactly its budget tall, such as a game
+board on a fixed grid, passes `:fill t`: the frame keeps every row and the
+surface paints the rest.  Width is clamped to the parent frame, so a wide request still fits.
 The frame is sized in pixels from the rendered content, so a row taller than the
 canonical line (a large clock, an icon) is never cut, and a trailing blank row
 left by the renderer is trimmed before measuring.  The panel re-fits when the
