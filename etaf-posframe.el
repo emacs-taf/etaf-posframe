@@ -159,6 +159,14 @@
   :type 'integer
   :group 'etaf-posframe)
 
+(defcustom etaf-posframe-surface-lift 0.04
+  "How far a panel surface lifts from the frame background, 0 to 0.5.
+Toward white in a dark theme and toward black in a light one.  Lower values keep
+the panel close to the buffer and let the border define the surface; higher ones
+make it read as a raised card."
+  :type 'number
+  :group 'etaf-posframe)
+
 (defcustom etaf-posframe-border-width 1
   "Border drawn around a panel, in pixels, unless it passes :border-width.
 A one pixel border in the theme's border colour is what separates the panel
@@ -298,7 +306,7 @@ result is a literal token plist accepted by `etaf-theme-provide'."
          ;; The panel must read as a surface above the buffer, not blend
          ;; into it: lift it clearly in dark themes and drop it in light ones.
          (panel (etaf-posframe--mix bg (if dark "#FFFFFF" "#000000")
-                                    (if dark 0.10 0.05)))
+                                    etaf-posframe-surface-lift))
          (border (etaf-posframe--mix panel fg 0.30))
          (muted (etaf-posframe--mix fg panel 0.42))
          (accent (or (etaf-posframe--color
@@ -315,7 +323,7 @@ result is a literal token plist accepted by `etaf-theme-provide'."
           :ui-panel-border border
           :ui-accent accent
           :ui-accent-fg (if dark "#101418" "#FFFFFF")
-          :ui-accent-soft-bg (funcall tint accent 0.18)
+          :ui-accent-soft-bg (funcall tint accent 0.12)
           :ui-disabled-fg (etaf-posframe--mix fg panel 0.6)
           :ui-disabled-bg (etaf-posframe--mix panel border 0.12)
           :ui-disabled-border border
