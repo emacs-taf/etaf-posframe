@@ -781,11 +781,11 @@ Return the new panel, or nil when it hid one."
 Runs outside render and event callbacks; it never touches the buffer."
   (when (etaf-posframe-live-p panel)
     (let* ((buffer (etaf-posframe--panel-buffer panel))
-           (window (get-buffer-window buffer t))
-           (frame (etaf-posframe--panel-frame panel)))
+           (window (get-buffer-window buffer t)))
       (when (window-live-p window)
-        (etaf-runtime-refit (etaf-posframe--panel-runtime panel)
-                          (frame-pixel-width frame) nil)
+        ;; No re-layout here: ETAF already re-rendered the View after the
+        ;; change, and a second layout writer duplicates rows.  Only the frame
+        ;; height follows the rendered content.
         (etaf-posframe--resize-to-content panel window)))))
 
 ;;;###autoload

@@ -47,6 +47,9 @@
 (defvar etaf-pomodoro--panel nil
   "Open panel, or nil.")
 
+(defvar etaf-pomodoro--keep nil
+  "Non-nil while the panel is remounted for another style.")
+
 (defun etaf-pomodoro--clock (seconds)
   "Format SECONDS as MM:SS."
   (format "%02d:%02d" (/ seconds 60) (% seconds 60)))
@@ -92,8 +95,8 @@
            (next (car (or (cdr (memq (etaf-value style)
                                       etaf-pomodoro--styles))
                           etaf-pomodoro--styles))))
-      (etaf-batch (setf (etaf-value style) next))
-      (etaf-posframe-refresh etaf-pomodoro--panel))))
+      (run-at-time 0.05 nil
+                   (lambda () (etaf-pomodoro--remount next))))))
 
 (defun etaf-pomodoro--tick ()
   "Advance the countdown by one second while running."
@@ -133,17 +136,18 @@
                                              center center)))
      size size (list 0 0 size size))))
 
-(defun etaf-pomodoro--progress-line (fraction colors)
-  "Return a thin FRACTION progress line with COLORS."
+(defun etaf-pomodoro--progress-line (fraction)
+  "Return a thin FRACTION progress line."
   (let* ((width 38)
          (filled (max 0 (min width (round (* width fraction)))))
          (filled-text (make-string filled 9473))
          (empty-text (make-string (- width filled) 9472)))
     (etaf-view
      (flex :column-gap '(ch 0) :align-items 'center
-           (text :color (plist-get colors :accent) :font-weight 'bold
+           (text :color (etaf-theme-token :ui-accent "#7FD1AE")
+                 :font-weight 'bold
                  (expr filled-text))
-           (text :color (plist-get colors :track)
+           (text :color (etaf-theme-token :ui-disabled-bg "#39464C")
                  (expr empty-text))))))
 
 (defun etaf-pomodoro--buttons (on)
@@ -163,16 +167,17 @@
   "Return the status line for LEFT seconds while ON."
   (format "%s · 剩余 %d 分钟" (if on "专注中" "已暂停") (ceiling left 60)))
 
-(defun etaf-pomodoro--minimal (left on fraction colors)
+(defun etaf-pomodoro--minimal (left on fraction)
   "Return the minimal style view."
   (etaf-view
    (column :item-gap '(lh 0) :width 'stretch
            (text :font-size 32 :font-weight 'bold
-                 :color (plist-get colors :ink)
+                 :color (etaf-theme-token :ui-panel-fg "#E9F0F4")
                  (expr (etaf-pomodoro--clock left)))
-           (text :font-size 11 :color (plist-get colors :muted)
+           (text :font-size 11
+                 :color (etaf-theme-token :ui-muted-fg "#93A3AA")
                  (expr (etaf-pomodoro--status left on)))
-           (expr (etaf-pomodoro--progress-line fraction colors))
+           (expr (etaf-pomodoro--progress-line fraction))
            (expr (etaf-pomodoro--buttons on)))))
 
 (defun etaf-pomodoro--ring-view (left on fraction colors)
@@ -184,28 +189,32 @@
                         :columns 8 :rows 4)
                  (column :item-gap '(lh 0)
                          (text :font-size 26 :font-weight 'bold
-                               :color (plist-get colors :ink)
+                               :color (etaf-theme-token :ui-panel-fg "#E9F0F4")
                                (expr (etaf-pomodoro--clock left)))
-                         (text :font-size 11 :color (plist-get colors :muted)
+                         (text :font-size 11
+                               :color (etaf-theme-token :ui-muted-fg "#93A3AA")
                                (expr (format "%d%% · %s"
                                              (round (* 100 fraction))
                                              (if on "专注中" "已暂停"))))))
+           (expr (etaf-pomodoro--progress-line fraction))
            (expr (etaf-pomodoro--buttons on)))))
 
-(defun etaf-pomodoro--card (left on fraction colors)
+(defun etaf-pomodoro--card (left on fraction)
   "Return the card style view."
   (etaf-view
    (column :item-gap '(lh 0) :width 'stretch
            (flex :justify-content 'space-between :align-items 'center
                  :padding '((lh 0) (ch 1))
-                 :background-color (plist-get colors :soft)
+                 :background-color (etaf-theme-token :ui-accent-soft-bg
+                                                     "#233A32")
                  :border-radius '(px 6)
-                 (text :font-size 11 :color (plist-get colors :accent)
+                 (text :font-size 11
+                       :color (etaf-theme-token :ui-accent "#7FD1AE")
                        "专注")
                  (text :font-size 24 :font-weight 'bold
-                       :color (plist-get colors :ink)
+                       :color (etaf-theme-token :ui-panel-fg "#E9F0F4")
                        (expr (etaf-pomodoro--clock left))))
-           (expr (etaf-pomodoro--progress-line fraction colors))
+           (expr (etaf-pomodoro--progress-line fraction))
            (expr (etaf-pomodoro--buttons on)))))
 
 (etaf-define-component etaf-pomodoro--view
@@ -222,12 +231,10 @@
      (etaf-card
       (column :item-gap '(lh 0) :width 'stretch
               (expr (pcase mode
-                      ('minimal (etaf-pomodoro--minimal
-                                 left on fraction colors))
+                      ('minimal (etaf-pomodoro--minimal left on fraction))
                       ('ring (etaf-pomodoro--ring-view
                               left on fraction colors))
-                      (_ (etaf-pomodoro--card
-                          left on fraction colors))))
+                      (_ (etaf-pomodoro--card left on fraction))))
               (etaf-divider)
               (flex :justify-content 'space-between :align-items 'center
                     (etaf-label :text (format "%d 分钟"
@@ -253,14 +260,39 @@
    :focusable t
    :on-close #'etaf-pomodoro--close))
 
+(defun etaf-pomodoro--remount (style)
+  "Remount the panel in STYLE at its current position.
+The retained renderer appends rows when a style subtree changes height, and a
+panel's size is settled when it opens, so a style change starts a new panel.
+The countdown carries over and the refs are recreated with the new Runtime."
+  (let* ((state etaf-pomodoro--state)
+         (panel etaf-pomodoro--panel)
+         (frame (and (etaf-posframe-live-p panel)
+                     (etaf-posframe--panel-frame panel)))
+         (position (and frame (cons (frame-parameter frame 'left)
+                                    (frame-parameter frame 'top))))
+         (remaining (etaf-value (plist-get state :remaining)))
+         (total (etaf-value (plist-get state :total)))
+         (running (etaf-value (plist-get state :running))))
+    (when panel
+      (let ((etaf-pomodoro--keep t))
+        (etaf-posframe-hide panel)))
+    (setq etaf-pomodoro--state
+          (list :remaining (etaf-ref remaining)
+                :total (etaf-ref total)
+                :running (etaf-ref running)
+                :style (etaf-ref style)))
+    (setq etaf-pomodoro--panel
+          (etaf-pomodoro--open etaf-pomodoro--state position))))
+
 (defun etaf-pomodoro--close (&optional _panel)
   "Stop the tick timer and forget the panel."
-  (when (timerp etaf-pomodoro--timer)
-    (cancel-timer etaf-pomodoro--timer))
-  (setq etaf-pomodoro--timer nil
-        etaf-pomodoro--state nil
-        etaf-pomodoro--panel nil))
-
+  (unless etaf-pomodoro--keep
+    (when (timerp etaf-pomodoro--timer)
+      (cancel-timer etaf-pomodoro--timer))
+    (setq etaf-pomodoro--timer nil
+          etaf-pomodoro--state nil
+          etaf-pomodoro--panel nil)))
 ;;;###autoload
 (defun etaf-pomodoro-start (&optional minutes)
   "Open the Pomodoro panel for MINUTES of focus, default 25.
@@ -281,11 +313,11 @@ The panel is pinned, draggable and focusable; `q', `ESC' or `C-g' close it."
 
 ;;;###autoload
 (defun etaf-pomodoro-stop ()
-  "Close the Pomodoro panel."
+  "Close the Pomodoro panel and stop the timer."
   (interactive)
-  (if (etaf-posframe-live-p etaf-pomodoro--panel)
-      (etaf-posframe-hide etaf-pomodoro--panel)
-    (etaf-pomodoro--close)))
+  (when (etaf-posframe-live-p etaf-pomodoro--panel)
+    (etaf-posframe-hide etaf-pomodoro--panel))
+  (etaf-pomodoro--close))
 
 (provide 'etaf-pomodoro)
 ;;; etaf-pomodoro.el ends here
