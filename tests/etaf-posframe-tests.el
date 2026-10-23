@@ -112,15 +112,6 @@
       (etaf-posframe-hide panel))
     (should (eq (selected-frame) origin))))
 
-(ert-deftest etaf-posframe-refresh-keeps-a-live-panel ()
-  "Refresh reports success for a live panel and never signals."
-  (skip-unless (display-graphic-p))
-  (let* ((view (etaf-view (text "panel")))
-         (panel (etaf-posframe-show view :width 24 :height 3)))
-    (unwind-protect
-        (should (etaf-posframe-refresh panel))
-      (etaf-posframe-hide panel))))
-
 (ert-deftest etaf-posframe-killing-the-parent-buffer-closes-the-panel ()
   "Killing the buffer that owns a panel hides that panel."
   (skip-unless (display-graphic-p))

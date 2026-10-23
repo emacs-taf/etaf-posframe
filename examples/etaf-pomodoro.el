@@ -47,16 +47,14 @@
 (defvar etaf-pomodoro--panel nil
   "Open panel, or nil.")
 
-(defvar etaf-pomodoro--restarting nil
-  "Non-nil while the panel is remounted for a style change.")
-
 (defun etaf-pomodoro--clock (seconds)
   "Format SECONDS as MM:SS."
   (format "%02d:%02d" (/ seconds 60) (% seconds 60)))
 
 (defun etaf-pomodoro--colors ()
   "Return the live card colors derived from the current frame."
-  (let ((theme (etaf-posframe-theme)))
+  (let ((theme (or (etaf-posframe-current-theme)
+                   (etaf-posframe-theme))))
     (list :ink (or (plist-get theme :ui-panel-fg) "#E9F0F4")
           :muted (or (plist-get theme :ui-muted-fg) "#93A3AA")
           :track (or (plist-get theme :ui-disabled-bg) "#39464C")
@@ -95,8 +93,7 @@
            (next (car (or (cdr (memq (etaf-value style)
                                       etaf-pomodoro--styles))
                           etaf-pomodoro--styles))))
-      (etaf-batch (setf (etaf-value style) next))
-      (etaf-pomodoro--remount))))
+      (etaf-batch (setf (etaf-value style) next)))))
 
 (defun etaf-pomodoro--tick ()
   "Advance the countdown by one second while running."
@@ -254,22 +251,13 @@
    :focusable t
    :on-close #'etaf-pomodoro--close))
 
-(defun etaf-pomodoro--remount ()
-  "Remount the panel so a different style starts from a clean surface."
-  (when (etaf-posframe-live-p etaf-pomodoro--panel)
-    (let ((etaf-pomodoro--restarting t))
-      (etaf-posframe-hide etaf-pomodoro--panel)))
-  (when etaf-pomodoro--state
-    (setq etaf-pomodoro--panel (etaf-pomodoro--open etaf-pomodoro--state))))
-
 (defun etaf-pomodoro--close (&optional _panel)
   "Stop the tick timer and forget the panel."
-  (unless etaf-pomodoro--restarting
-    (when (timerp etaf-pomodoro--timer)
-      (cancel-timer etaf-pomodoro--timer))
-    (setq etaf-pomodoro--timer nil
-          etaf-pomodoro--state nil
-          etaf-pomodoro--panel nil)))
+  (when (timerp etaf-pomodoro--timer)
+    (cancel-timer etaf-pomodoro--timer))
+  (setq etaf-pomodoro--timer nil
+        etaf-pomodoro--state nil
+        etaf-pomodoro--panel nil))
 
 ;;;###autoload
 (defun etaf-pomodoro-start (&optional minutes)

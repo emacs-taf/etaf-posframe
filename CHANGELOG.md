@@ -12,7 +12,6 @@
   header-line dragging, a timeout and an `on-close` callback.
 - `:auto-focus` selects a focusable panel on open and hiding restores the
   previous frame; `q`, `ESC` and `C-g` close it from inside the panel.
-- `etaf-posframe-refresh` re-measures the content and fits the frame.
 - One panel per buffer: showing another replaces the first, and killing the
   parent buffer hides its panel.
 - Panels follow the Emacs theme: loading a theme re-derives the palette and

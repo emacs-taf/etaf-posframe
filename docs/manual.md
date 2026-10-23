@@ -35,9 +35,10 @@ it to collect the data it shows and to refuse when there is nothing to show:
 a second one, and a second `etaf-posframe-show` for the same buffer replaces the
 earlier panel.  `etaf-posframe-hide` closes a panel and releases its Runtime,
 timer and frame; `etaf-posframe-panels` returns the live panels;
-`etaf-posframe-live-p` reports whether one panel is still alive; and
-`etaf-posframe-refresh` re-measures the content and fits the frame after a
-reactive View changed its height.
+and `etaf-posframe-live-p` reports whether one panel is still alive.  A
+panel's size is settled when it opens; a View that changes its rendered height
+re-lays out inside that frame.  To change the panel's size, hide it and show a
+new panel.
 
 ## Options
 
@@ -78,14 +79,6 @@ three keys.  The View's own `:keys` handle the rest.  A focusable panel selects
 itself on open (`:auto-focus`), and hiding returns focus to the frame that was
 selected before.  Passive panels never see the keyboard: the next command runs
 in the buffer that owns point and the panel hides.
-
-## Refreshing content
-
-A reactive View repaints inside the panel, but a frame cannot resize itself when
-its content grows.  Call `etaf-posframe-refresh` after a change that alters the
-rendered height; it re-lays out the View at the panel width, fits the frame to
-the new rows and keeps the panel's position.  Content taller than `:height`
-stays clipped, so raise `:height` for panels whose content can grow.
 
 ## Sizing
 

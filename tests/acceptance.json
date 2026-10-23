@@ -51,11 +51,6 @@
    "purpose": "A focusable panel selects itself on open and returns focus to the previous frame on hide."
   },
   {
-   "name": "etaf-posframe-refresh-keeps-a-live-panel",
-   "file": "tests/etaf-posframe-tests.el",
-   "purpose": "Refreshing a live panel re-measures its content and reports success."
-  },
-  {
    "name": "etaf-posframe-killing-the-parent-buffer-closes-the-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "The panel owns a kill-buffer hook in its parent buffer, so killing that buffer releases the panel."
