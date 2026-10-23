@@ -246,7 +246,10 @@ reads as a surface above the buffer rather than a hole in it.  The panel that
 holds the input focus paints its border in the Theme's accent instead, which is
 how you see where the keyboard is while several panels are open; the frame behind
 them has no border at all.  `:focus-border-color` overrides that colour and
-`(nil)` turns the hint off.  The accent follows the selection, so clicking a
+`(nil)` turns the hint off.  With `etaf-posframe-focus-follows-mouse` (the
+default), a panel the pointer rests on takes the focus, so its border is already
+in the focused colour before a click and the border does not change under the
+pointer; `etaf-posframe-hover-interval` sets how often the pointer is checked.  The accent follows the selection, so clicking a
 panel or the frame behind it moves it without running a panel command.
 
 `:border-width`

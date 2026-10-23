@@ -174,6 +174,11 @@
    "name": "etaf-posframe-rejects-a-bad-offset",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "An offset that is not an integer pair or a function signals etaf-posframe-error naming the option."
+  },
+  {
+   "name": "etaf-posframe-hover-focuses-a-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A focusable panel under the mouse pointer takes the input focus on its own."
   }
  ]
 }

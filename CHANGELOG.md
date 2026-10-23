@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A panel the mouse pointer rests on takes the input focus
+  (`etaf-posframe-focus-follows-mouse`, default on), so hovering already shows
+  the focused border and clicking it does not change the border again.
+
 - `:offset` shifts a panel by `(ROWS . COLUMNS)` character cells from whatever
   `:at`, `:cell` or `:stack` chose, so a caller writes "centred, one row up"
   instead of counting a position; a function may compute the pair.

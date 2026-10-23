@@ -667,5 +667,25 @@ switches it without running any panel command."
                 (should-error (etaf-posframe-show view :offset offset)
                               :type 'etaf-posframe-error)))))))
 
+(ert-deftest etaf-posframe-hover-focuses-a-panel ()
+  "A panel under the mouse pointer takes the focus by itself."
+  (skip-unless (display-graphic-p))
+  (skip-unless etaf-posframe-focus-follows-mouse)
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "hover"))
+                                    :key 'hover :width 24 :height 2
+                                    :pinned t :focusable t))
+         (frame (etaf-posframe-panel-frame panel)))
+    (unwind-protect
+        (progn
+          (select-frame origin)
+          ;; The timer samples the mouse position; answer for it.
+          (cl-letf (((symbol-function 'mouse-pixel-position)
+                     (lambda () (cons frame '(10 . 10)))))
+            (sleep-for (+ 0.2 etaf-posframe-hover-interval))
+            (should (eq (selected-frame) frame))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

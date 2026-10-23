@@ -189,6 +189,14 @@
 ;; Variable: etaf-posframe-default-max-height
 ;; Maximum content lines of a new panel when `:height' is absent.
 ;;
+;; Variable: etaf-posframe-focus-follows-mouse
+;; Move the input focus to a panel the mouse pointer rests on, so hovering shows
+;; the focused border and a click does not change it.  Default t; only panels
+;; that accept the keyboard are focused.
+;;
+;; Variable: etaf-posframe-hover-interval
+;; Seconds between two checks of the panel under the pointer.
+;;
 ;; Variable: etaf-posframe-panel-keys
 ;; Keymap that is always active while a focusable panel has focus.  It closes
 ;; the panel on `q', `ESC' and `C-g' and outranks the View's own keys only for
@@ -239,6 +247,18 @@ A light panel keeps a faint grey so it still reads as a surface."
   :type 'number
   :group 'etaf-posframe)
 
+(defcustom etaf-posframe-focus-follows-mouse t
+  "Move the input focus to a panel the mouse pointer rests on.
+Then the panel under the pointer already shows the focused border, and a click
+does not change it again.  Only panels that accept the keyboard are focused."
+  :type 'boolean
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-hover-interval 0.1
+  "Seconds between two checks of the panel under the mouse pointer."
+  :type 'number
+  :group 'etaf-posframe)
+
 (defcustom etaf-posframe-border-width 1
   "Border drawn around a panel, in pixels, unless it passes :border-width.
 A one pixel border in the theme's border colour is what separates the panel
@@ -265,6 +285,9 @@ from the buffer behind it and makes it read as a floating surface."
 
 (defvar etaf-posframe--dismissing nil
   "Non-nil while a dismissal pass runs, to avoid re-entrant hooks.")
+
+(defvar etaf-posframe--hover-timer nil
+  "Timer that watches the panel under the mouse pointer.")
 
 (defvar-local etaf-posframe--parent-panel nil
   "Panel anchored to this buffer, or nil.")
@@ -731,6 +754,16 @@ start at zero, so (0 . 0) is its first cell."
   (if etaf-posframe--panels
       (add-hook 'post-command-hook #'etaf-posframe--follow-focus)
     (remove-hook 'post-command-hook #'etaf-posframe--follow-focus))
+  (if (and etaf-posframe--panels etaf-posframe-focus-follows-mouse
+           (not (timerp etaf-posframe--hover-timer)))
+      (setq etaf-posframe--hover-timer
+            (run-with-timer etaf-posframe-hover-interval
+                            etaf-posframe-hover-interval
+                            #'etaf-posframe--hover-focus))
+    (when (and (null etaf-posframe--panels)
+               (timerp etaf-posframe--hover-timer))
+      (cancel-timer etaf-posframe--hover-timer)
+      (setq etaf-posframe--hover-timer nil)))
   (if (cl-some (lambda (panel)
                  (memq (plist-get (etaf-posframe--panel-options panel) :dismiss)
                        '(auto focus-out)))
@@ -983,6 +1016,23 @@ Re-fit once when the settled window width changes the content height."
   (setq etaf-posframe--painted-focus (selected-frame))
   (dolist (panel etaf-posframe--panels)
     (ignore-errors (etaf-posframe--paint-border panel))))
+
+(defun etaf-posframe--hover-focus ()
+  "Focus the panel under the mouse pointer, so hovering selects it."
+  (when (and etaf-posframe-focus-follows-mouse etaf-posframe--panels)
+    (let* ((position (mouse-pixel-position))
+           (frame (car-safe position))
+           (panel (and (frame-live-p frame)
+                       (etaf-posframe--panel-for-frame frame))))
+      (when (and panel
+                 (plist-get (etaf-posframe--panel-options panel) :focusable)
+                 (not (eq (selected-frame) frame)))
+        (etaf-posframe--restore-input-focus frame)
+        (when-let* ((window (get-buffer-window
+                             (etaf-posframe--panel-buffer panel) t)))
+          (select-window window)
+          (setf (etaf-posframe--panel-focused panel) t))
+        (etaf-posframe--paint-borders)))))
 
 (defun etaf-posframe--follow-focus ()
   "Repaint the borders when the selected frame changed under us.
