@@ -108,6 +108,11 @@
 ;; theme callback.  A panel also re-fits automatically when its host frame
 ;; changes size.  Return non-nil when PANEL is live.
 ;;
+;; Function: etaf-posframe-panel-frame (panel)
+;; Return PANEL's child frame, or nil when PANEL is not live.
+;; Read or compare the frame with this instead of reaching into package
+;; internals, for example to place another panel relative to it.
+;;
 ;; Function: etaf-posframe-live-p (panel)
 ;; Return non-nil while PANEL's frame exists and its Runtime is mounted.
 ;;
@@ -1196,6 +1201,12 @@ non-nil when PANEL is live."
                       (eq (etaf-posframe--panel-runtime panel) runtime))
                     etaf-posframe--panels)))
         (and panel (etaf-posframe-panel-theme panel))))))
+
+;;;###autoload
+(defun etaf-posframe-panel-frame (panel)
+  "Return PANEL's child frame, or nil when PANEL is not live."
+  (when (etaf-posframe-live-p panel)
+    (etaf-posframe--panel-frame panel)))
 
 (defun etaf-posframe-live-p (panel)
   "Return non-nil while PANEL's frame exists and its Runtime is mounted."
