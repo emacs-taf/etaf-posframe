@@ -35,10 +35,11 @@ it to collect the data it shows and to refuse when there is nothing to show:
 a second one, and a second `etaf-posframe-show` for the same buffer replaces the
 earlier panel.  `etaf-posframe-hide` closes a panel and releases its Runtime,
 timer and frame; `etaf-posframe-panels` returns the live panels;
-and `etaf-posframe-live-p` reports whether one panel is still alive.  A
-panel's size is settled when it opens; a View that changes its rendered height
-re-lays out inside that frame.  To change the panel's size, hide it and show a
-new panel.
+and `etaf-posframe-live-p` reports whether one panel is still alive.
+`etaf-posframe-refresh` re-fits the frame to the content after a View changed
+its style or height; the fit is deferred past the current event and render, so
+a Button or timer may call it safely.  A panel keeps the size it opened with
+otherwise: resizing its frame by hand is not a supported gesture.
 
 ## Options
 
