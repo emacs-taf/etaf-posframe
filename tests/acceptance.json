@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "load_path": [
+  ".",
+  "tests",
+  "../ebox",
+  "../ecss",
+  "../ekp",
+  "../etaf"
+ ],
+ "support": [],
+ "cases": [
+  {
+   "name": "etaf-posframe-rejects-invalid-options",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Unknown options, non-positive sizes, unsupported dismissal and anchors signal etaf-posframe-error with the offending option named."
+  },
+  {
+   "name": "etaf-posframe-theme-returns-frame-colors",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel Theme derives every catalog token as an #RRGGBB color from the current frame."
+  },
+  {
+   "name": "etaf-posframe-live-p-rejects-non-panels",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Lifecycle predicates accept only live panel objects and an empty panel list reports no panels."
+  },
+  {
+   "name": "etaf-posframe-show-owns-panel-lifecycle",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Showing a View mounts one panel and hiding it releases the panel, its Runtime and its frame."
+  },
+  {
+   "name": "etaf-posframe-toggle-hides-the-open-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "The toggle entry hides the current buffer's open panel instead of stacking a second one."
+  }
+ ]
+}
