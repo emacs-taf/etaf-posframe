@@ -67,6 +67,13 @@
 ;;   :timeout    Seconds after which the panel hides by itself.
 ;;   :theme      ETAF UI Theme plist; defaults to `etaf-posframe-theme' for the
 ;;               current frame, so catalog Components match the user's frame.
+;;   :border-width  Border around the frame in pixels, default
+;;               `etaf-posframe-border-width' (1); 0 draws none.
+;;   :border-color  Border colour, default the Theme's panel border, so the
+;;               panel reads as a surface floating above the buffer.
+;;   :stack      With an anchor `:at', keep the panel clear of live panels at
+;;               that anchor: stack downward from a top or centre anchor and
+;;               upward from a bottom one, `etaf-posframe--stack-gap' apart.
 ;;   :on-close   Function called with the panel after it was hidden.
 ;;   :key        Identity of the panel.  Showing a View with a key that is
 ;;               already live replaces that panel; views with different keys,
@@ -146,6 +153,16 @@
   "Maximum content lines of a panel without :height."
   :type 'integer
   :group 'etaf-posframe)
+
+(defcustom etaf-posframe-border-width 1
+  "Border drawn around a panel, in pixels, unless it passes :border-width.
+A one pixel border in the theme's border colour is what separates the panel
+from the buffer behind it and makes it read as a floating surface."
+  :type 'integer
+  :group 'etaf-posframe)
+
+(defconst etaf-posframe--stack-gap 6
+  "Pixels left between panels stacked at the same place.")
 
 (defconst etaf-posframe--margin 2
   "Free columns kept between a panel and its parent frame edge.")
@@ -341,8 +358,9 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 `point-top' place the panel at point.")
 
 (defconst etaf-posframe--option-keys
-  '(:at :cell :width :height :header :draggable :pinned :focusable
-    :auto-focus :dismiss :timeout :theme :on-close :key)
+  '(:at :cell :stack :width :height :header :draggable :pinned :focusable
+    :auto-focus :dismiss :timeout :theme :on-close :key :border-width
+    :border-color)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -380,6 +398,19 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
              (signal 'etaf-posframe-error
                      (list (format "Panel :cell must be a (ROW . COLUMN) pair of non-negative integers: %S"
                                    value)))))
+          (:stack
+           (unless (or (null value) (eq value t))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :stack must be t or nil: %S" value)))))
+          (:border-width
+           (unless (and (wholenump value) (< value 20))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :border-width must be 0..19 pixels: %S"
+                                   value)))))
+          (:border-color
+           (unless (or (null value) (stringp value))
+             (signal 'etaf-posframe-error
+                     (list "Panel :border-color must be a color string" value))))
           (:on-close
            (unless (or (null value) (functionp value))
              (signal 'etaf-posframe-error
@@ -391,6 +422,12 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
                      (list "Panel :theme must be a plist, ref or computed"
                            value)))))
         (setq result (plist-put result key value))))
+    (when (and (plist-get result :stack)
+               (or (plist-get result :cell)
+                   (and (consp (plist-get result :at))
+                        (numberp (car (plist-get result :at))))))
+      (signal 'etaf-posframe-error
+              (list "Panel :stack needs an anchor :at, not a fixed position")))
     result))
 
 (defun etaf-posframe--rect (info kind)
@@ -445,6 +482,51 @@ parent's scroll bar or window border."
                 table))))
     table)
   "Poshandler of every symbol in `etaf-posframe--anchors'.")
+
+(defun etaf-posframe--frame-rect (frame)
+  "Return (X Y WIDTH HEIGHT) of FRAME in its parent's pixels."
+  (when (frame-live-p frame)
+    (list (or (frame-parameter frame 'left) 0)
+          (or (frame-parameter frame 'top) 0)
+          (frame-pixel-width frame)
+          (frame-pixel-height frame))))
+
+(defun etaf-posframe--rect-overlap-p (a b)
+  "Return non-nil when rectangles A and B, both (X Y WIDTH HEIGHT), overlap."
+  (and (< (nth 0 a) (+ (nth 0 b) (nth 2 b)))
+       (> (+ (nth 0 a) (nth 2 a)) (nth 0 b))
+       (< (nth 1 a) (+ (nth 1 b) (nth 3 b)))
+       (> (+ (nth 1 a) (nth 3 a)) (nth 1 b))))
+
+(defun etaf-posframe--stacking-poshandler (at)
+  "Return a poshandler placing the panel at AT, clear of live panels.
+Panels opened at the same anchor stack in order: downward from a top or centre
+anchor, upward from a bottom one, leaving `etaf-posframe--stack-gap' between
+them."
+  (let* ((base (etaf-posframe--poshandler at))
+         (place (cadr (split-string (symbol-name at) "-")))
+         (down (not (and place (string-prefix-p "bottom" place)))))
+    (lambda (info)
+      (let* ((position (funcall base info))
+             (x (car position))
+             (y (cdr position))
+             (width (or (plist-get info :posframe-width) 0))
+             (height (or (plist-get info :posframe-height) 0))
+             (rect (list x y width height))
+             (others (delq nil (mapcar (lambda (panel)
+                                         (etaf-posframe--frame-rect
+                                          (etaf-posframe--panel-frame panel)))
+                                       (etaf-posframe-panels))))
+             (step (* (if down 1 -1) (+ height etaf-posframe--stack-gap)))
+             (tries 0))
+        (while (and (< tries 20)
+                    (cl-some (lambda (other)
+                               (etaf-posframe--rect-overlap-p rect other))
+                             others))
+          (setq y (+ y step)
+                rect (list x y width height)
+                tries (1+ tries)))
+        (cons x y)))))
 
 (defun etaf-posframe--cell-poshandler (cell)
   "Return a poshandler that puts the panel at CELL, a (ROW . COLUMN) pair.
@@ -594,7 +676,12 @@ start at zero, so (0 . 0) is its first cell."
            :min-height (+ 1 (if header 1 0))
            :left-fringe 0
            :right-fringe 0
-           :border-width 0
+           :border-width (or (plist-get options :border-width)
+                             etaf-posframe-border-width)
+           :border-color (or (plist-get options :border-color)
+                             (plist-get (etaf-value
+                                         (etaf-posframe--panel-theme panel))
+                                        :ui-panel-border))
            :internal-border-width 0
            :respect-header-line (and header t)
            :accept-focus (and focusable t)
@@ -618,7 +705,10 @@ start at zero, so (0 . 0) is its first cell."
          (list :poshandler (etaf-posframe--cell-poshandler cell))
        (if (and (consp at) (numberp (car at)) (numberp (cdr at)))
            (list :position at)
-         (list :poshandler (etaf-posframe--poshandler at)))))))
+         (list :poshandler
+               (if (and (plist-get options :stack) (symbolp at))
+                   (etaf-posframe--stacking-poshandler at)
+                 (etaf-posframe--poshandler at))))))))
 
 (defun etaf-posframe--fit (panel)
   "Fit PANEL's Runtime to WINDOW's frame width and its body height.
@@ -1075,7 +1165,10 @@ non-nil when PANEL is live."
       (when-let* ((timer (etaf-posframe--panel-fit-timer panel)))
         (cancel-timer timer))
       (setf (etaf-posframe--panel-fit-timer panel)
-            (run-at-time 0.05 nil
+            ;; Zero delay runs on the next timer tick, after the redisplay
+            ;; that reported the size: a resize therefore shows at most one
+            ;; frame of the old layout instead of a visible garble.
+            (run-at-time 0 nil
                          (lambda ()
                            (setf (etaf-posframe--panel-fit-timer panel) nil)
                            (ignore-errors (etaf-posframe--fit-now panel)))))

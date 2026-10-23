@@ -124,6 +124,21 @@
    "name": "etaf-posframe-hiding-a-focused-panel-returns-focus",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "Hiding a focused panel selects the frame it came from and a panel can be opened again immediately."
+  },
+  {
+   "name": "etaf-posframe-stacks-panels-at-the-same-anchor",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Panels shown at one anchored place are stacked a gap apart at the same x, down to the last opened."
+  },
+  {
+   "name": "etaf-posframe-draws-a-theme-bordered-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel paints the requested border colour outside its text area, so the content keeps its exact width."
+  },
+  {
+   "name": "etaf-posframe-rejects-stack-without-an-anchor",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": ":stack with a cell or a pixel position signals etaf-posframe-error instead of silently ignoring it."
   }
  ]
 }

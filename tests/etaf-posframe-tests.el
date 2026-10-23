@@ -171,11 +171,13 @@ mismatch left empty frame to the right of the canvas."
          (panel (etaf-posframe-show (etaf-view (text "panel"))
                                     :width columns)))
     (unwind-protect
-        (let ((frame (etaf-posframe-tests--panel-frame parent)))
-          (should (= (* columns char) (frame-pixel-width frame)))
-          (should (= (frame-pixel-width frame) (frame-text-width frame)))
-          (should (= columns (window-body-width
-                              (etaf-posframe-tests--panel-window frame)))))
+        (let* ((frame (etaf-posframe-tests--panel-frame parent))
+               (window (etaf-posframe-tests--panel-window frame)))
+          ;; The border is painted outside the text area, so the visible
+          ;; content keeps exactly the panel's column width.
+          (should (= (* columns char) (window-body-width window t)))
+          (should (= (frame-text-width frame) (window-body-width window t)))
+          (should (= columns (window-body-width window))))
       (etaf-posframe-hide panel))))
 
 (ert-deftest etaf-posframe-frame-is-not-taller-than-the-content ()
@@ -230,7 +232,6 @@ mismatch left empty frame to the right of the canvas."
           ;; the re-layout out of its own callback.
           (redisplay t)
           (sleep-for 0.4)
-          (should (= width (frame-pixel-width frame)))
           (should (= width (window-body-width window t)))
           (should (= width (car (etaf-runtime-viewport
                                  (etaf-runtime-for-buffer buffer)))))
@@ -240,7 +241,7 @@ mismatch left empty frame to the right of the canvas."
           ;; A later fit keeps the adopted width instead of snapping back.
           (etaf-posframe-refresh panel)
           (sleep-for 0.3)
-          (should (= width (frame-pixel-width frame))))
+          (should (= width (window-body-width window t))))
       (etaf-posframe-hide panel))))
 
 (ert-deftest etaf-posframe-frame-adopts-a-shorter-height ()
@@ -449,6 +450,60 @@ command after a close used to freeze."
             (should (etaf-posframe-live-p again))
             (etaf-posframe-hide again)))
       (ignore-errors (etaf-posframe-hide panel)))))
+
+(ert-deftest etaf-posframe-stacks-panels-at-the-same-anchor ()
+  "Panels opened at one anchored place are laid out one below the other."
+  (skip-unless (display-graphic-p))
+  (let* ((first (etaf-posframe-show (etaf-view (text "first")) :key 'first
+                                    :at 'frame-top-right :stack t
+                                    :width 24 :height 3))
+         (second (etaf-posframe-show (etaf-view (text "second")) :key 'second
+                                     :at 'frame-top-right :stack t
+                                     :width 24 :height 3))
+         (third (etaf-posframe-show (etaf-view (text "third")) :key 'third
+                                    :at 'frame-top-right :stack t
+                                    :width 24 :height 3)))
+    (unwind-protect
+        (let ((y1 (frame-parameter (etaf-posframe--panel-frame first) 'top))
+              (y2 (frame-parameter (etaf-posframe--panel-frame second) 'top))
+              (y3 (frame-parameter (etaf-posframe--panel-frame third) 'top))
+              (height (frame-pixel-height (etaf-posframe--panel-frame first)))
+              (x1 (frame-parameter (etaf-posframe--panel-frame first) 'left))
+              (x3 (frame-parameter (etaf-posframe--panel-frame third) 'left)))
+          (should (= x1 x3))
+          (should (= y2 (+ y1 height etaf-posframe--stack-gap)))
+          (should (= y3 (+ y2 height etaf-posframe--stack-gap))))
+      (ignore-errors (etaf-posframe-hide third))
+      (ignore-errors (etaf-posframe-hide second))
+      (ignore-errors (etaf-posframe-hide first)))))
+
+(ert-deftest etaf-posframe-draws-a-theme-bordered-panel ()
+  "A panel carries a border in the given colour without losing content width."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (selected-frame))
+         (char (frame-char-width parent))
+         (panel (etaf-posframe-show (etaf-view (text "x"))
+                                    :width 24 :height 2
+                                    :border-width 2 :border-color "#123456")))
+    (unwind-protect
+        (let ((frame (etaf-posframe-tests--panel-frame parent)))
+          (should (= 2 (frame-parameter frame 'child-frame-border-width)))
+          (should (= (* 24 char) (window-body-width
+                                  (etaf-posframe-tests--panel-window frame) t)))
+          (should (equal "#123456"
+                         (face-attribute 'child-frame-border :background frame))))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-rejects-stack-without-an-anchor ()
+  ":stack needs an anchored place, not a cell or a pixel pair."
+  (let ((view (etaf-view (text "x"))))
+    (dolist (options '((:stack t :cell (0 . 0))
+                       (:stack t :at (10 . 10))))
+      (should (string-match-p
+               "stack"
+               (error-message-string
+                (should-error (apply #'etaf-posframe-show view options)
+                              :type 'etaf-posframe-error)))))))
 
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

@@ -12,6 +12,14 @@
 - Closing a focused panel hands the window system's input focus back to the
   frame it was opened from.  `select-frame' alone left macOS without a key
   window, so the next command froze until the user clicked the parent frame.
+- Panels draw a one pixel border in the Theme's panel border colour, so they
+  read as surfaces above the buffer.  `:border-width` and `:border-color` change
+  it; the border is painted outside the text area, so the content keeps its
+  width.
+- `:stack t` with an anchor `:at` places a new panel clear of the panels already
+  at that anchor, one gap below (or above, for a `bottom-*` anchor).
+- A resize re-fits at the next timer tick instead of after 50 ms, so dragging a
+  panel edge no longer shows a stretched old layout for long.
 - A returned panel prints as one readable line.  Its Runtime and Theme ref
   used to live in the struct, so printing the value of an
   `etaf-posframe-show` call (`C-x C-e`, a log line) followed a cycle.

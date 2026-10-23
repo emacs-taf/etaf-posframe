@@ -109,6 +109,9 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:theme` | ETAF UI Theme plist; defaults to `etaf-posframe-theme` for the current frame. |
 | `:on-close` | Function called with the panel after it is hidden. |
 | `:key` | Identity of the panel.  A show with a live key replaces that panel; different keys, or no key, coexist. |
+| `:border-width` | Border around the frame in pixels, default `etaf-posframe-border-width` (1).  `0` draws none. |
+| `:border-color` | Border colour; defaults to the Theme's panel border. |
+| `:stack` | With an anchor `:at`, place the panel clear of the panels already there, one gap below (or above, for a `bottom-*` anchor). |
 
 Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
 unsupported `:at` signal `etaf-posframe-error` before any frame is created.
@@ -160,6 +163,31 @@ pixels, and a function is a Posframe poshandler.
 Rows and columns count from zero at the top left of the window's text area and
 follow the parent frame's character metrics, so the same `:cell` lands on the
 same cell whatever the panel's own size is.  `:cell` wins over `:at`.
+
+`:stack` turns an anchor into a run of panels: the next panel opened at the same
+anchor is placed clear of the ones already there, `etaf-posframe--stack-gap`
+pixels below (or above, when the anchor starts at the bottom edge).  It needs a
+symbol anchor, not a fixed position:
+
+```elisp
+(etaf-posframe-show music :key 'music :at 'frame-top-right :stack t)
+(etaf-posframe-show lyrics :key 'lyrics :at 'frame-top-right :stack t)
+```
+
+```text
++---------------------+
+|        panel 1      |  <- frame-top-right, :stack t
++---------------------+
+|        panel 2      |
++---------------------+
+```
+
+## Look
+
+Every panel draws a one pixel border in the Theme's panel border colour, so it
+reads as a surface above the buffer rather than a hole in it.  `:border-width`
+changes or removes it and `:border-color` overrides the colour; both keep the
+content width exact, because the border is painted outside the text area.
 
 ## Lifecycle and ownership
 
