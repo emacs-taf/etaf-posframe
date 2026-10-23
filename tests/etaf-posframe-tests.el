@@ -165,6 +165,14 @@ its content, so its height is not the requested line count."
   "Return the buffer FRAME displays."
   (window-buffer (etaf-posframe-tests--panel-window frame)))
 
+(defun etaf-posframe-tests--with-pointer-on (frame function)
+  "Call FUNCTION with the window system reporting the pointer on FRAME.
+A child frame cannot be pointed at from Lisp, so the position query the panel
+follows is answered instead."
+  (cl-letf (((symbol-function 'mouse-pixel-position)
+             (lambda () (list frame 5 5))))
+    (funcall function)))
+
 (ert-deftest etaf-posframe-frame-is-as-wide-as-the-canvas ()
   "A panel frame is exactly as wide as its content columns.
 The frame used to keep whatever width posframe gave it, so a font metric
@@ -668,10 +676,10 @@ switches it without running any panel command."
                               :type 'etaf-posframe-error)))))))
 
 (ert-deftest etaf-posframe-hover-focuses-a-panel ()
-  "An event landing in a panel focuses it, and a passive panel never takes it."
+  "The pointer on a panel focuses it when asked, and never a passive panel."
   (skip-unless (display-graphic-p))
-  ;; The behaviour is opt-in: a pointer reading cannot be relied on for child
-  ;; frames, so the panel is focused by an event that lands in it.
+  ;; The behaviour is opt-in: a resting pointer must not move the keyboard away
+  ;; from another window.
   (let* ((etaf-posframe-focus-follows-mouse t)
          (origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "hover"))
@@ -681,8 +689,8 @@ switches it without running any panel command."
     (unwind-protect
         (progn
           (select-frame origin)
-          (with-current-buffer (window-buffer (frame-root-window frame))
-            (run-hooks 'post-command-hook))
+          (etaf-posframe-tests--with-pointer-on
+           frame (lambda () (run-hooks 'post-command-hook)))
           (should (eq (selected-frame) frame))
           ;; A passive panel never takes the focus from the pointer.
           (etaf-posframe-hide panel)
@@ -691,8 +699,8 @@ switches it without running any panel command."
                                           :pinned t :focusable nil)
                 frame (etaf-posframe-panel-frame panel))
           (select-frame origin)
-          (with-current-buffer (window-buffer (frame-root-window frame))
-            (run-hooks 'post-command-hook))
+          (etaf-posframe-tests--with-pointer-on
+           frame (lambda () (run-hooks 'post-command-hook)))
           (should (eq (selected-frame) origin)))
       (ignore-errors (etaf-posframe-hide panel))
       (ignore-errors (select-frame-set-input-focus origin)))))
@@ -721,7 +729,7 @@ would offer the panel as a target instead of the application behind it."
       (ignore-errors (select-frame-set-input-focus origin)))))
 
 (ert-deftest etaf-posframe-hover-paints-a-border-without-focus ()
-  "A pointer over a panel paints its border accent while the keyboard stays."
+  "The pointer on a panel paints its border accent while the keyboard stays."
   (skip-unless (display-graphic-p))
   (let* ((origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "hover"))
@@ -731,21 +739,25 @@ would offer the panel as a target instead of the application behind it."
     (unwind-protect
         (progn
           (select-frame origin)
-          (run-hooks 'post-command-hook)
+          (etaf-posframe-tests--with-pointer-on
+           origin (lambda () (run-hooks 'post-command-hook)))
           (let ((resting (face-attribute 'child-frame-border :background frame)))
-            ;; A command inside the panel means the pointer is on it.
-            (with-current-buffer (window-buffer (frame-root-window frame))
-              (run-hooks 'post-command-hook))
+            ;; The hint follows the pointer, not the keyboard: the panel is not
+            ;; selected, and the pointer on it still paints the accent.
+            (etaf-posframe-tests--with-pointer-on
+             frame (lambda () (run-hooks 'post-command-hook)))
             (should (eq (selected-frame) origin))
-            (should-not (equal resting
-                               (face-attribute 'child-frame-border :background
-                                               frame)))
-            ;; Leaving removes the hint again.
-            (select-frame origin)
-            (run-hooks 'post-command-hook)
-            (should (equal resting
-                           (face-attribute 'child-frame-border :background
-                                           frame)))))
+            (let ((accent (face-attribute 'child-frame-border :background frame)))
+              (should-not (equal resting accent))
+              ;; Leaving a panel runs no command in the buffer the pointer lands
+              ;; in, so the package reads the pointer itself while panels are
+              ;; open, and the border returns to rest without a command.
+              ;; `sleep-for' drives the timers whatever input is pending.
+              (etaf-posframe-tests--with-pointer-on
+               origin (lambda () (sleep-for 0.6)))
+              (should (equal resting
+                             (face-attribute 'child-frame-border :background
+                                             frame))))))
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 

@@ -5,9 +5,15 @@
 - Panels hide while Emacs is inactive, so a window manager that lists child
   frames (macOS Mission Control) cannot offer them in place of the application
   behind them; `etaf-posframe-hide-inactive` turns it off.
-- `etaf-posframe-focus-follows-mouse` focuses a panel from an event that lands
-  inside it.  It defaults to nil: Emacs reports the parent frame for a pointer
-  over a child frame, so a hover cannot be detected reliably.
+- The panel border follows the mouse pointer: the panel under the pointer
+  paints its hover accent without taking the keyboard, so hovering it and then
+  clicking it changes nothing.  The position comes from the window system,
+  which reports a child frame; a 0.2 s reading while panels exist clears the
+  hint when the pointer leaves, because a pointer leaving a buffer runs no
+  command.
+- `etaf-posframe-focus-follows-mouse` focuses the panel under the pointer.  It
+  defaults to nil, so a resting pointer does not move the keyboard away from
+  another window.
 
 - `:offset` shifts a panel by `(ROWS . COLUMNS)` character cells from whatever
   `:at`, `:cell` or `:stack` chose, so a caller writes "centred, one row up"

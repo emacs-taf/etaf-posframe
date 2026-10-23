@@ -71,6 +71,11 @@
 ;;               `etaf-posframe-border-width' (1); 0 draws none.
 ;;   :border-color  Border colour, default the Theme's panel border, so the
 ;;               panel reads as a surface floating above the buffer.
+;;   :focus-border-color  Border colour while the panel holds the keyboard;
+;;               default the Theme's accent.
+;;   :hover-border-color  Border colour while the mouse pointer is over the
+;;               panel; default `:focus-border-color'.  Hover and focus paint
+;;               the same accent, so clicking a hovered panel changes nothing.
 ;;   :offset     (ROWS . COLUMNS) character cells to shift whatever `:at' or
 ;;               `:cell' chose, so a panel can start from an anchor and move.
 ;;               Negative rows go up, negative columns go left.  A function is
@@ -197,8 +202,9 @@
 ;;
 ;; Variable: etaf-posframe-focus-follows-mouse
 ;; Move the input focus to a panel the mouse pointer rests on, so hovering shows
-;; the focused border and a click does not change it.  Default t; only panels
-;; that accept the keyboard are focused.
+;; the focused border and a click does not change it.  Default nil; only panels
+;; that accept the keyboard are focused.  The hover border needs no option:
+;; the panel under the pointer paints its border accent and keeps the keyboard.
 ;;;;
 ;; Variable: etaf-posframe-panel-keys
 ;; Keymap that is always active while a focusable panel has focus.  It closes
@@ -252,12 +258,11 @@ A light panel keeps a faint grey so it still reads as a surface."
 
 (defcustom etaf-posframe-focus-follows-mouse nil
   "Move the input focus to a panel the mouse pointer enters.
-The focus comes from a mouse movement that lands inside the panel, because Emacs
-cannot otherwise see the pointer over a child frame: `mouse-autoselect-window'
-and `focus-follows-mouse' act on the position Emacs reports, which is the parent
-frame.  A pointer that enters and stops without an event therefore does not
-focus the panel, and this is why it is off by default.  Only panels that accept
-the keyboard are focused; nil keeps the focus on what you click."
+The panel under the pointer takes the keyboard as soon as the pointer is on it,
+so hovering shows the focused border and a click does not change the panel.
+Only panels that accept the keyboard are focused; nil keeps the focus on what
+you click, which is the default because a resting pointer should not move the
+keyboard away from another window."
   :type 'boolean
   :group 'etaf-posframe)
 
@@ -299,6 +304,12 @@ from the buffer behind it and makes it read as a floating surface."
 
 (defvar etaf-posframe--hover-panel nil
   "Panel whose surface the mouse pointer is on, or nil.")
+
+(defconst etaf-posframe--hover-interval 0.2
+  "Seconds between pointer readings while panels exist.")
+
+(defvar etaf-posframe--hover-timer nil
+  "Timer that reads the pointer while panels exist.")
 
 (defvar-local etaf-posframe--parent-panel nil
   "Panel anchored to this buffer, or nil.")
@@ -755,6 +766,7 @@ start at zero, so (0 . 0) is its first cell."
                  (not (eq selected parent))
                  (eq (frame-focus-state parent) nil))
             (etaf-posframe-hide panel)))))
+      (etaf-posframe--refresh-hover)
       (etaf-posframe--paint-borders)
       (etaf-posframe--sync-activation))))
 
@@ -773,7 +785,8 @@ start at zero, so (0 . 0) is its first cell."
       (add-function :after after-focus-change-function
                     #'etaf-posframe--focus-change)
     (remove-function after-focus-change-function
-                     #'etaf-posframe--focus-change)))
+                     #'etaf-posframe--focus-change))
+  (etaf-posframe--watch-hover))
 
 ;;; Rendering
 
@@ -823,7 +836,11 @@ start at zero, so (0 . 0) is its first cell."
       (setq-local mode-line-format nil)
       (setq-local cursor-type nil)
       (setq-local vertical-scroll-bar nil)
-      (setq-local horizontal-scroll-bar nil))))
+      (setq-local horizontal-scroll-bar nil)
+      ;; The surface reports pointer motion itself: a buffer without mouse
+      ;; tracking runs no command when the pointer enters, so the hover border
+      ;; of a View that paints no hover feedback would never appear.
+      (setq-local track-mouse t))))
 
 (defun etaf-posframe--frame-args (panel lines)
   "Return the `posframe-show' arguments for PANEL showing LINES of content."
@@ -1026,20 +1043,52 @@ a panel and then clicking it changes nothing on screen."
   (dolist (panel etaf-posframe--panels)
     (ignore-errors (etaf-posframe--paint-border panel))))
 
-(defun etaf-posframe--focus-buffer-panel ()
-  "Focus the panel whose buffer is current, if it accepts the keyboard.
-A mouse movement inside a panel runs its renderer's hover command with the panel
-buffer current, so this follows the pointer without asking where the pointer is:
-polling `mouse-pixel-position' reports the last event, which is stale while the
-pointer rests."
-  (when-let* ((_ etaf-posframe-focus-follows-mouse)
-              (panel (cl-find-if
-                      (lambda (panel)
-                        (and (plist-get (etaf-posframe--panel-options panel)
-                                        :focusable)
-                             (eq (etaf-posframe--panel-buffer panel)
-                                 (current-buffer))))
-                      etaf-posframe--panels))
+(defun etaf-posframe--pointer-panel ()
+  "Return the panel under the mouse pointer, or nil.
+`mouse-pixel-position' asks the window system which frame has the pointer,
+child frames included, so this is the hover question itself.  The current
+buffer cannot answer it: a motion command inside a panel runs while another
+frame still holds the keyboard."
+  (let* ((position (and (display-graphic-p) (mouse-pixel-position)))
+         (frame (car-safe position)))
+    (when (and (frame-live-p frame) (numberp (nth 1 position)))
+      (cl-find-if (lambda (panel)
+                    (and (plist-get (etaf-posframe--panel-options panel)
+                                    :focusable)
+                         (eq (etaf-posframe--panel-frame panel) frame)))
+                  etaf-posframe--panels))))
+
+(defun etaf-posframe--refresh-hover ()
+  "Point the hover hint at the panel under the pointer.
+Return that panel, and paint only when the hint moved."
+  (let ((panel (etaf-posframe--pointer-panel)))
+    (unless (eq panel etaf-posframe--hover-panel)
+      (setq etaf-posframe--hover-panel panel)
+      (etaf-posframe--paint-borders))
+    panel))
+
+(defun etaf-posframe--watch-hover ()
+  "Keep one pointer timer exactly while a panel frame is on screen.
+Entering a panel runs a motion command, which paints the hint at once; leaving
+one runs no command in the buffer the pointer lands in, so a reading clears the
+hint instead.  A reading is one position query, not a poll of an application."
+  (if (cl-some (lambda (panel)
+                 (frame-live-p (etaf-posframe--panel-frame panel)))
+               etaf-posframe--panels)
+      (unless (timerp etaf-posframe--hover-timer)
+        (setq etaf-posframe--hover-timer
+              (run-with-timer etaf-posframe--hover-interval
+                              etaf-posframe--hover-interval
+                              #'etaf-posframe--refresh-hover)))
+    (when (timerp etaf-posframe--hover-timer)
+      (cancel-timer etaf-posframe--hover-timer)
+      (setq etaf-posframe--hover-timer nil)
+      (setq etaf-posframe--hover-panel nil))))
+
+(defun etaf-posframe--focus-pointer-panel ()
+  "Give the keyboard to the panel the pointer rests on.
+Only a panel that accepts the keyboard enters the hover state."
+  (when-let* ((panel etaf-posframe--hover-panel)
               (frame (etaf-posframe--panel-frame panel)))
     (unless (eq (selected-frame) frame)
       (etaf-posframe--restore-input-focus frame)
@@ -1062,19 +1111,12 @@ while another application is in front."
 
 (defun etaf-posframe--follow-focus ()
   "Follow the pointer and the selection for the panel borders.
-A command that runs inside a panel means the pointer is on it, because a mouse
-movement over the panel is such a command; that panel gets the hover border
-without taking the keyboard.  The keyboard still moves only on a click, or on
-hover when `etaf-posframe-focus-follows-mouse' asks for it."
-  (let ((buffer (current-buffer)))
-    (setq etaf-posframe--hover-panel
-          (cl-find-if (lambda (panel)
-                        (and (plist-get (etaf-posframe--panel-options panel)
-                                        :focusable)
-                             (eq (etaf-posframe--panel-buffer panel) buffer)))
-                      etaf-posframe--panels)))
+The panel under the pointer gets the hover border without taking the keyboard;
+the keyboard moves only on a click, or on hover when
+`etaf-posframe-focus-follows-mouse' asks for it."
+  (etaf-posframe--refresh-hover)
   (when etaf-posframe-focus-follows-mouse
-    (etaf-posframe--focus-buffer-panel))
+    (etaf-posframe--focus-pointer-panel))
   (etaf-posframe--sync-activation)
   (etaf-posframe--paint-borders))
 
