@@ -12,9 +12,11 @@
 - Closing a focused panel hands the window system's input focus back to the
   frame it was opened from.  `select-frame' alone left macOS without a key
   window, so the next command froze until the user clicked the parent frame.
-- The panel surface lifts less from the frame background (4% instead of 10% in
-  a dark theme), so the border defines it instead of a muddy tint;
-  `etaf-posframe-surface-lift` tunes it.
+- A dark panel paints the flat near-black surface family that dark
+  applications use (the NetEase player's `#191a1c`), so a panel and such an
+  application read as one design; the frame paint matches the canvas, so no
+  second colour shows at the edges.  `etaf-posframe-dark-shade',
+  `etaf-posframe-dark-surface' and `etaf-posframe-surface-lift' tune it.
 - Panels draw a one pixel border in the Theme's panel border colour, so they
   read as surfaces above the buffer.  `:border-width` and `:border-color` change
   it; the border is painted outside the text area, so the content keeps its

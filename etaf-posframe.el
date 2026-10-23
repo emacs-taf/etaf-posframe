@@ -159,11 +159,24 @@
   :type 'integer
   :group 'etaf-posframe)
 
-(defcustom etaf-posframe-surface-lift 0.04
-  "How far a panel surface lifts from the frame background, 0 to 0.5.
-Toward white in a dark theme and toward black in a light one.  Lower values keep
-the panel close to the buffer and let the border define the surface; higher ones
-make it read as a raised card."
+(defcustom etaf-posframe-dark-shade 0.5
+  "How far a dark theme's panel surface sinks toward `etaf-posframe-dark-surface'.
+Dark applications such as the NetEase player paint a flat near-black surface;
+sinking the panel by half keeps the panel in that family instead of lifting the
+theme colour into a grey card."
+  :type 'number
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-dark-surface "#101214"
+  "Neutral near-black a dark panel surface sinks toward.
+This is the surface family dark applications use, so a panel and such an
+application read as one design."
+  :type 'color
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-surface-lift 0.03
+  "How far a light theme's panel surface sinks toward black, 0 to 0.5.
+A light panel keeps a faint grey so it still reads as a surface."
   :type 'number
   :group 'etaf-posframe)
 
@@ -305,8 +318,11 @@ result is a literal token plist accepted by `etaf-theme-provide'."
          (dark (eq (frame-parameter frame 'background-mode) 'dark))
          ;; The panel must read as a surface above the buffer, not blend
          ;; into it: lift it clearly in dark themes and drop it in light ones.
-         (panel (etaf-posframe--mix bg (if dark "#FFFFFF" "#000000")
-                                    etaf-posframe-surface-lift))
+         (panel (if dark
+                    (etaf-posframe--mix bg etaf-posframe-dark-surface
+                                        etaf-posframe-dark-shade)
+                  (etaf-posframe--mix bg "#000000"
+                                      etaf-posframe-surface-lift)))
          (border (etaf-posframe--mix panel fg 0.30))
          (muted (etaf-posframe--mix fg panel 0.42))
          (accent (or (etaf-posframe--color
@@ -698,10 +714,12 @@ start at zero, so (0 . 0) is its first cell."
            :internal-border-width 0
            :respect-header-line (and header t)
            :accept-focus (and focusable t)
+           ;; The frame paint matches the canvas surface so a sub-cell
+           ;; remainder at the edge cannot show a second colour.
            :background-color (or (plist-get (etaf-value
-                                         (etaf-posframe--panel-theme panel))
-                                        :ui-bg)
-                             "#FFFFFF")
+                                             (etaf-posframe--panel-theme panel))
+                                            :ui-panel-bg)
+                                 "#FFFFFF")
            :foreground-color (or (plist-get (etaf-value
                                              (etaf-posframe--panel-theme panel))
                                             :ui-fg)
