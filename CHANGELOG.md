@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- A panel title bar carries a theme toggle when its `:theme` is `auto`, `light`
+  or `dark`: `亮`, `随` and `暗` in one row of equal-width boxes, the current
+  mode filled with the theme accent.  A click repaints that panel for the rest
+  of its life and never writes the caller's configuration.
+
+### Fixed
+
+- Switching between `auto` and the frame's own mode no longer shifts the panel
+  and title-bar colours: a pin that agrees with the frame keeps the frame's
+  surface.  The mode now comes from the frame's actual background, so a theme
+  that leaves `background-mode` stale is read correctly, and a filled accent
+  takes black or white ink by its luminance instead of by the palette's mode.
+
 ### Removed
 
 - The Pomodoro example panel moved to its own application package,

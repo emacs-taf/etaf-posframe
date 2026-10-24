@@ -818,21 +818,34 @@ would offer the panel as a target instead of the application behind it."
       (ignore-errors (select-frame-set-input-focus origin)))))
 
 (ert-deftest etaf-posframe-theme-pins-a-mode ()
-  "A pinned Theme keeps its mode whatever the Emacs theme is."
-  (let* ((dark (etaf-posframe-theme nil 'dark))
+  "A pinned Theme keeps its mode whatever the Emacs theme is.
+A pin that agrees with the frame keeps the frame's surface, so following the
+theme and pinning to its own mode paint the same panel; a pin that disagrees
+still stays on its polarity instead of following the frame."
+  (let* ((mode (frame-parameter nil 'background-mode))
+         (auto (etaf-posframe-theme nil))
+         (dark (etaf-posframe-theme nil 'dark))
          (light (etaf-posframe-theme nil 'light))
-         (mode (frame-parameter nil 'background-mode)))
+         (luminance #'etaf-posframe-tests--luminance))
     (unwind-protect
         (progn
-          (should (< (etaf-posframe-tests--luminance (plist-get dark :ui-bg))
-                     (etaf-posframe-tests--luminance (plist-get light :ui-bg))))
-          ;; The Emacs theme does not move a pinned panel.
-          (set-frame-parameter nil 'background-mode 'light)
-          (should (equal (plist-get dark :ui-bg)
-                         (plist-get (etaf-posframe-theme nil 'dark) :ui-bg)))
-          (set-frame-parameter nil 'background-mode 'dark)
-          (should (equal (plist-get light :ui-bg)
-                         (plist-get (etaf-posframe-theme nil 'light) :ui-bg))))
+          (should (< (funcall luminance (plist-get dark :ui-bg))
+                     (funcall luminance (plist-get light :ui-bg))))
+          ;; Following the theme and pinning to the theme's own mode agree.
+          (set-frame-parameter nil 'background-mode
+                               (if (eq (plist-get auto :ui-mode) 'dark)
+                                   'dark 'light))
+          (should (equal (plist-get (etaf-posframe-theme nil) :ui-panel-bg)
+                         (plist-get dark :ui-panel-bg)))
+          ;; The opposite pin keeps its polarity when the frame's mode moves.
+          (set-frame-parameter nil 'background-mode
+                               (if (eq mode 'dark) 'light 'dark))
+          (should (< (funcall luminance
+                              (plist-get (etaf-posframe-theme nil 'dark) :ui-bg))
+                     0.4))
+          (should (> (funcall luminance
+                              (plist-get (etaf-posframe-theme nil 'light) :ui-bg))
+                     0.6)))
       (set-frame-parameter nil 'background-mode mode))))
 
 (ert-deftest etaf-posframe-hover-is-dimmer-than-focus ()
@@ -1037,6 +1050,60 @@ and a focused panel derived a wrong palette from the frame it had selected."
                            (frame-parameter frame 'foreground-color)))
             ;; The title bar follows the same palette in the same pass.
             (should-not (equal before (funcall header)))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame origin))
+      (mapc #'disable-theme custom-enabled-themes)
+      (dolist (theme enabled)
+        (ignore-errors (load-theme theme t))))))
+
+(defun etaf-posframe-tests--header-segment (header caption)
+  "Return the position of CAPTION's segment in HEADER, or nil."
+  (cl-loop for i from 0 below (1- (length header))
+           for map = (get-text-property i 'keymap header)
+           when (and map (string= caption (substring-no-properties
+                                           header (1+ i) (+ 2 i))))
+           return i))
+
+(ert-deftest etaf-posframe-title-bar-toggles-theme-mode ()
+  "A click on a title-bar segment repaints the panel on that mode.
+The `:theme' option is the initial value; the toggle changes the panel for its
+own lifetime without touching the caller's configuration, and the selected
+segment takes no pointer-hover face, so its label stays readable."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (enabled (copy-sequence custom-enabled-themes))
+         (panel (etaf-posframe-show (etaf-view (text "tone"))
+                                    :key 'theme-toggle :width 40 :height 2
+                                    :title "ETAF" :theme 'auto))
+         (frame (etaf-posframe-panel-frame panel))
+         (luminance #'etaf-posframe-tests--luminance))
+    (unwind-protect
+        (let* ((buffer (etaf-posframe-tests--panel-buffer frame))
+               (header (with-current-buffer buffer header-line-format))
+               (before (frame-parameter frame 'background-color))
+               ;; Click the segment the panel is not already showing.
+               (caption (if (< (funcall luminance before) 0.5) "亮" "暗"))
+               (position (etaf-posframe-tests--header-segment header caption))
+               (selected (etaf-posframe-tests--header-segment header "随"))
+               (command (and position
+                             (lookup-key (get-text-property position 'keymap header)
+                                         [header-line mouse-1]))))
+          (should position)
+          (should command)
+          ;; Every segment is present, and the selected one has no hover face.
+          (should (etaf-posframe-tests--header-segment header "亮"))
+          (should (etaf-posframe-tests--header-segment header "随"))
+          (should (etaf-posframe-tests--header-segment header "暗"))
+          (should-not (get-text-property selected 'mouse-face header))
+          (should (get-text-property position 'mouse-face header))
+          (call-interactively command)
+          (let ((after (frame-parameter frame 'background-color)))
+            (should-not (equal before after))
+            (if (string= caption "亮")
+                (should (> (funcall luminance after) 0.5))
+              (should (< (funcall luminance after) 0.5))))
+          ;; The toggle is a session setting: the Emacs themes are untouched.
+          (should (equal enabled custom-enabled-themes)))
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame origin))
       (mapc #'disable-theme custom-enabled-themes)

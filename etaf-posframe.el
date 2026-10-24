@@ -4,7 +4,7 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Author: ETAF contributors
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (etaf "0.3.0") (posframe "0.9.0"))
+;; Package-Requires: ((emacs "29.1") (etaf "0.3.0") (etaf-ui "0.3.0") (posframe "0.9.0"))
 ;; Keywords: frames, ui
 ;; URL: https://github.com/emacs-taf/etaf-posframe
 
@@ -230,6 +230,7 @@
 
 (require 'cl-lib)
 (require 'etaf)
+(require 'etaf-ui)
 (require 'posframe)
 
 (defgroup etaf-posframe nil
@@ -440,6 +441,27 @@ It is looked up from the panel buffer, so the panel struct stays printable."
            (append (cl-mapcar (lambda (a b) (+ a (* (- b a) amount))) start end)
                    '(2)))))
 
+(defun etaf-posframe--dark-color-p (color)
+  "Return non-nil when COLOR is a dark surface."
+  (let ((rgb (ignore-errors (color-name-to-rgb color))))
+    (and rgb (< (+ (* 0.2126 (nth 0 rgb))
+                   (* 0.7152 (nth 1 rgb))
+                   (* 0.0722 (nth 2 rgb)))
+                0.5))))
+
+(defun etaf-posframe--ink-on (color)
+  "Return readable ink for text on a fill of COLOR.
+The ink follows the fill's luminance, not the palette's mode: a dark theme may
+carry a pale accent and a light theme a deep one, and the label has to stay
+readable on the accent either way."
+  (let ((rgb (ignore-errors (color-name-to-rgb color))))
+    (if (and rgb (> (+ (* 0.2126 (nth 0 rgb))
+                       (* 0.7152 (nth 1 rgb))
+                       (* 0.0722 (nth 2 rgb)))
+                    0.55))
+        "#101418"
+      "#FFFFFF")))
+
 (defconst etaf-posframe--light-base '("#F7F8FA" . "#1F2328")
   "Background and foreground of a panel pinned to the light mode.")
 
@@ -455,23 +477,31 @@ follow the user's palette.  Every value is an #RRGGBB color, so the result is a
 literal token plist accepted by `etaf-theme-provide'."
   (let* ((frame (or frame (selected-frame)))
          (pinned (memq mode '(light dark)))
-         (base (if pinned
-                   (if (eq mode 'dark) etaf-posframe--dark-base
-                     etaf-posframe--light-base)
-                 ;; Ask FRAME itself.  An explicit nil INHERIT answers for
-                 ;; the selected frame instead, and signals on an inherited
-                 ;; face such as `link', so a panel that held the keyboard
-                 ;; derived its palette from its own frame.
-                 (cons (or (etaf-posframe--color
-                            (face-attribute 'default :background frame))
-                           "#FFFFFF")
-                       (or (etaf-posframe--color
-                            (face-attribute 'default :foreground frame))
-                           "#000000"))))
+         ;; Ask FRAME itself.  An explicit nil INHERIT answers for the selected
+         ;; frame instead, and signals on an inherited face such as `link', so
+         ;; a panel that held the keyboard derived its palette from its own
+         ;; frame.
+         (frame-bg (etaf-posframe--color
+                    (face-attribute 'default :background frame)))
+         (frame-fg (etaf-posframe--color
+                    (face-attribute 'default :foreground frame)))
+         (frame-base (and frame-bg frame-fg (cons frame-bg frame-fg)))
+         ;; The frame's own surface decides the mode: a theme may leave the
+         ;; `background-mode' parameter stale after the colors change.
+         (frame-dark (and frame-base (etaf-posframe--dark-color-p frame-bg)))
+         (dark (cond (pinned (eq mode 'dark))
+                     (frame-base frame-dark)
+                     (t (eq (frame-parameter frame 'background-mode) 'dark))))
+         ;; A pin that agrees with the frame keeps the frame's own surface, so
+         ;; following the theme and pinning to its mode paint the same panel.
+         ;; A pin that disagrees, or a frame without resolved colours such as a
+         ;; batch frame, needs a base of the pinned polarity.
+         (base (if (or (and pinned (not (eq dark frame-dark)))
+                       (null frame-base))
+                   (if dark etaf-posframe--dark-base etaf-posframe--light-base)
+                 frame-base))
          (bg (car base))
          (fg (cdr base))
-         (dark (if pinned (eq mode 'dark)
-                 (eq (frame-parameter frame 'background-mode) 'dark)))
          ;; The panel must read as a surface above the buffer, not blend
          ;; into it: lift it clearly in dark themes and drop it in light ones.
          (panel (if dark
@@ -497,12 +527,12 @@ literal token plist accepted by `etaf-theme-provide'."
           :ui-panel-fg fg
           :ui-panel-border border
           :ui-accent accent
-          :ui-accent-fg (if dark "#101418" "#FFFFFF")
+          :ui-accent-fg (etaf-posframe--ink-on accent)
           :ui-accent-soft-bg (funcall tint accent 0.12)
           :ui-disabled-fg (etaf-posframe--mix fg panel 0.6)
           :ui-disabled-bg (etaf-posframe--mix panel border 0.12)
           :ui-disabled-border border
-          :ui-button-primary-fg (if dark "#101418" "#FFFFFF")
+          :ui-button-primary-fg (etaf-posframe--ink-on accent)
           :ui-button-primary-bg accent
           :ui-button-secondary-fg (etaf-posframe--mix fg accent 0.35)
           :ui-button-secondary-bg (funcall tint accent 0.18)
@@ -908,34 +938,60 @@ start at zero, so (0 . 0) is its first cell."
           (cl-incf count))
         count))))
 
-(defun etaf-posframe--header-format (header theme width)
+(defconst etaf-posframe--theme-modes
+  '((light . "亮") (auto . "随") (dark . "暗"))
+  "Segments of the title-bar theme toggle, in display order.
+The selected one is the panel's current `:theme'.")
+
+(defun etaf-posframe--header-format (header theme width &optional mode)
   "Return HEADER as a full-width title bar for THEME and WIDTH columns.
+MODE, one of `light', `auto' or `dark', adds the theme toggle at the right;
+a panel with its own palette passes nil and keeps a plain title bar.
+
 The bar keeps the panel surface and adds a single hairline below it: a band
 lifted toward the foreground reads as a second surface in a light theme, and
 the theme's `header-line' box would draw a coloured outline around it."
   (when header
     (let* ((text (concat " " header))
-           (padding (max 0 (- width (string-width text))))
-           (bar (concat text (make-string padding ?\s)))
+           (strip (and (assq mode etaf-posframe--theme-modes)
+                       (etaf-toggle-strip
+                        :options etaf-posframe--theme-modes
+                        :value mode
+                        :theme theme
+                        :on-change #'etaf-posframe--choose-theme-mode)))
+           (padding (max 0 (- width (string-width text)
+                              (if strip (string-width strip) 0))))
            (surface (etaf-posframe--mix (plist-get theme :ui-panel-bg)
-                                        (plist-get theme :ui-panel-fg) 0.03)))
-      (propertize bar
-                  'face (list :background surface
-                              :foreground (plist-get theme :ui-panel-fg)
-                              :weight 'bold
-                              :height 1.0
-                              ;; A theme may render its own header line
-                              ;; inverted and boxed; the title bar keeps the
-                              ;; panel's palette, paints every column and owns
-                              ;; its own separator.
-                              :inverse-video nil
-                              :box nil
-                              :extend t)
-                  'underline (list :color (plist-get theme :ui-panel-border)
-                                   :style 'line)))))
+                                        (plist-get theme :ui-panel-fg) 0.03))
+           (plain (propertize (concat text (make-string padding ?\s))
+                              'face (list :background surface
+                                          :foreground (plist-get theme :ui-panel-fg)
+                                          :weight 'bold
+                                          :height 1.0
+                                          ;; A theme may render its own header
+                                          ;; line inverted and boxed; the title
+                                          ;; bar keeps the panel's palette,
+                                          ;; paints every column and owns its
+                                          ;; own separator.
+                                          :inverse-video nil
+                                          :box nil
+                                          :extend t)
+                              'underline (list :color (plist-get theme :ui-panel-border)
+                                               :style 'line))))
+      ;; The strip keeps its own faces: `propertize' over the whole bar would
+      ;; replace the segment faces with the title bar's.
+      (concat plain (if strip
+                        (etaf-toggle-strip
+                         :options etaf-posframe--theme-modes
+                         :value mode
+                         :theme theme
+                         :surface surface
+                         :on-change #'etaf-posframe--choose-theme-mode)
+                      "")))))
 
-(defun etaf-posframe--prepare-buffer (buffer header theme width)
-  "Set BUFFER up as a panel surface with HEADER and THEME."
+(defun etaf-posframe--prepare-buffer (buffer header theme width &optional mode)
+  "Set BUFFER up as a panel surface with HEADER and THEME.
+MODE adds the title-bar theme toggle, as in `etaf-posframe--header-format'."
   (let ((theme theme))
     (with-current-buffer buffer
       (erase-buffer)
@@ -946,7 +1002,7 @@ the theme's `header-line' box would draw a coloured outline around it."
                                      (make-display-table))))
       (set-display-table-slot buffer-display-table 'truncation ?\s)
       (setq-local header-line-format
-                  (etaf-posframe--header-format header theme width))
+                  (etaf-posframe--header-format header theme width mode))
       (setq-local mode-line-format nil)
       (setq-local cursor-type nil)
       (setq-local vertical-scroll-bar nil)
@@ -1392,36 +1448,61 @@ then re-derives once."
       (etaf-posframe--set-frame-palette frame palette)
       (ignore-errors (etaf-posframe--paint-border panel)))))
 
+(defun etaf-posframe--refresh-header (panel palette)
+  "Rebuild PANEL's title bar for PALETTE and its current theme mode."
+  (let ((buffer (etaf-posframe--panel-buffer panel))
+        (options (etaf-posframe--panel-options panel)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (setq-local header-line-format
+                    (etaf-posframe--header-format
+                     (plist-get options :title) palette
+                     (plist-get options :width)
+                     (and (memq (plist-get options :theme) '(light auto dark))
+                          (plist-get options :theme))))))))
+
+(defun etaf-posframe--apply-theme-to (panel)
+  "Derive PANEL's Theme from its parent frame and repaint its title bar.
+A pass that leaves the palette unchanged only re-asserts the frame colours,
+because repainting the View is the expensive part of a theme change."
+  (let ((theme (etaf-posframe--panel-theme panel))
+        (parent-frame (etaf-posframe--panel-parent-frame panel))
+        (options (etaf-posframe--panel-options panel)))
+    (when (and (etaf-ref-p theme) (frame-live-p parent-frame)
+               (memq (plist-get options :theme) '(auto light dark)))
+      (ignore-errors
+        (let* ((mode (plist-get options :theme))
+               (palette (etaf-posframe-theme
+                         parent-frame
+                         (and (not (eq mode 'auto)) mode)))
+               (frame (etaf-posframe--panel-frame panel)))
+          (when (frame-live-p frame)
+            (etaf-posframe--set-frame-palette frame palette))
+          (unless (equal palette (etaf-value theme))
+            (etaf-batch (setf (etaf-value theme) palette))
+            (ignore-errors (etaf-posframe--paint-border panel))
+            (ignore-errors (etaf-posframe--sync-activation)))
+          ;; The title bar repaints in both cases: the palette may be the same
+          ;; while the toggle moved, as `auto' and `light' are in a light frame.
+          (etaf-posframe--refresh-header panel palette))))))
+
 (defun etaf-posframe--apply-theme ()
-  "Derive each live panel's Theme once from its parent frame.
-A switch that leaves the palette unchanged only re-asserts the frame colours,
-because repainting every View is the expensive part of a theme change."
+  "Derive every live panel's Theme once from its parent frame."
   (dolist (panel (copy-sequence etaf-posframe--panels))
-    (let ((theme (etaf-posframe--panel-theme panel))
-          (parent-frame (etaf-posframe--panel-parent-frame panel))
-          (options (etaf-posframe--panel-options panel)))
-      (when (and (etaf-ref-p theme) (frame-live-p parent-frame)
-                 (memq (plist-get options :theme) '(auto light dark)))
-        (ignore-errors
-          (let* ((mode (plist-get options :theme))
-                 (palette (etaf-posframe-theme
-                           parent-frame
-                           (and (not (eq mode 'auto)) mode)))
-                 (frame (etaf-posframe--panel-frame panel)))
-            (when (frame-live-p frame)
-              (etaf-posframe--set-frame-palette frame palette))
-            (unless (equal palette (etaf-value theme))
-              (etaf-batch (setf (etaf-value theme) palette))
-              (ignore-errors (etaf-posframe--paint-border panel))
-              (ignore-errors (etaf-posframe--sync-activation))
-              (let ((buffer (etaf-posframe--panel-buffer panel))
-                    (header (plist-get options :title))
-                    (width (plist-get options :width)))
-                (when (buffer-live-p buffer)
-                  (with-current-buffer buffer
-                    (setq-local header-line-format
-                                (etaf-posframe--header-format
-                                 header palette width))))))))))))
+    (etaf-posframe--apply-theme-to panel)))
+
+(defun etaf-posframe--choose-theme-mode (mode)
+  "Keep the current panel on MODE for the rest of its life.
+The title bar's toggle changes this panel's `:theme' option and repaints it;
+the caller's configuration is never written, so the choice lasts only as long
+as the panel."
+  (let ((panel (etaf-posframe--current-panel)))
+    (when (and (memq mode '(light auto dark))
+               (etaf-posframe-live-p panel))
+      (setf (etaf-posframe--panel-options panel)
+            (plist-put (copy-sequence (etaf-posframe--panel-options panel))
+                       :theme mode))
+      (etaf-posframe--apply-theme-to panel))))
 
 (defun etaf-posframe--theme-changed (&rest _)
   "Coalesce a theme switch into one pass after the current command.
@@ -1528,7 +1609,10 @@ described in the package Commentary."
                   (format " *ETAF Panel %d*" (cl-incf etaf-posframe--counter))))
     (etaf-posframe--prepare-buffer buffer (plist-get options :title)
                                    (etaf-value theme-ref)
-                                   (plist-get options :width))
+                                   (plist-get options :width)
+                                   (and (memq (plist-get options :theme)
+                                              '(light auto dark))
+                                        (plist-get options :theme)))
     (unwind-protect
         (progn
           (etaf-mount buffer
@@ -1635,7 +1719,10 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
           (with-current-buffer buffer
             (setq-local header-line-format
                         (etaf-posframe--header-format
-                         text theme (plist-get adopted :width)))))))
+                         text theme (plist-get adopted :width)
+                         (and (memq (plist-get adopted :theme)
+                                    '(light auto dark))
+                              (plist-get adopted :theme))))))))
     ;; A resize away from the row budget is the new budget: taller always, and
     ;; shorter only when it cuts into the content.  The panel's own fit sets
     ;; the frame to the content height, which must not shrink the budget.

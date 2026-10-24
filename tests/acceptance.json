@@ -3,6 +3,7 @@
  "load_path": [
   ".",
   "tests",
+  "../etaf-ui",
   "../ebox",
   "../ecss",
   "../ekp",
@@ -234,6 +235,11 @@
    "name": "etaf-posframe-theme-switch-lands-in-one-pass",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A theme switch repaints a focused panel and its title bar from the parent frame's new palette in one pass."
+  },
+  {
+   "name": "etaf-posframe-title-bar-toggles-theme-mode",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A title-bar segment click repaints the panel on that mode without changing the Emacs themes, and the selected segment takes no hover face."
   }
  ]
 }

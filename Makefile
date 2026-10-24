@@ -2,7 +2,7 @@
 .NOTPARALLEL:
 EMACS ?= emacs
 POSFRAME_DIR ?= $(lastword $(sort $(wildcard $(HOME)/.emacs.d/elpa/posframe-*)))
-PROVIDERS = -L ../etaf -L ../ebox -L ../ecss -L ../ekp
+PROVIDERS = -L ../etaf -L ../etaf-ui -L ../ebox -L ../ecss -L ../ekp
 LOAD_PATH = -L . -L tests $(PROVIDERS) $(if $(POSFRAME_DIR),-L $(POSFRAME_DIR))
 SOURCES = etaf-posframe.el examples/etaf-symbol-card.el tests/etaf-posframe-tests.el
 
@@ -12,7 +12,7 @@ all: check
 
 compile:
 	rm -f *.elc examples/*.elc tests/*.elc
-	$(EMACS) -Q --batch $(LOAD_PATH) -L ../etaf-ui \
+	$(EMACS) -Q --batch $(LOAD_PATH) \
 		--eval '(setq load-prefer-newer t byte-compile-error-on-warn t)' \
 		--eval '(require (quote cl-lib))' \
 		--eval '(unless (cl-every (function byte-compile-file) (quote ($(foreach file,$(SOURCES),"$(file)")))) (kill-emacs 1))'

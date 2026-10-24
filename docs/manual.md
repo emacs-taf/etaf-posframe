@@ -315,7 +315,12 @@ Theme: loading another theme re-derives the palette and restyles every live
 panel through `enable-theme-functions`, and the panel re-fits its height for the
 new faces.  `:theme 'light` or `:theme 'dark` pins a panel instead: it keeps
 that palette whoever the Emacs theme is (the frame's accent still
-follows), while the default `'auto` follows the frame.  Every palette carries
+follows), while the default `'auto` follows the frame.  A pin that agrees with
+the frame's own surface keeps that surface, so switching between `auto` and the
+frame's own mode does not move the panel or title-bar colours; a pin that
+disagrees derives a palette of the pinned polarity.  The mode comes from the
+frame's actual background, so a theme that leaves `background-mode` stale is
+still read correctly.  Every palette carries
 `:ui-mode` (`light` or `dark`), so a View that owns its own light and dark
 palettes can read the panel's mode instead of the frame's `background-mode`.  The header line is a
 full-width title bar: a surface lifted 3% toward the foreground and one
@@ -323,6 +328,16 @@ hairline below it separate it from the panel body, and the bar clears the
 theme's `header-line` box instead of drawing its outline, so a light theme
 has no dark outline around the title.  It keeps the panel's colors and fills
 every column even when the frame's own `header-line` face is inverted.
+
+A panel whose `:theme` is `auto`, `light` or `dark` also carries a theme toggle
+at the right of the title bar: `亮`, `随` and `暗` in one row of equal-width
+boxes, the current mode filled with the theme accent.  Clicking a segment
+repaints that panel on the chosen mode for the rest of its life; the option
+stays the initial value, so the choice is never written to the caller's
+configuration, and a panel with its own palette has no toggle.  The selected
+segment keeps its fill and takes no pointer-hover face, so its label stays
+readable.  The control is `etaf-toggle-strip' from etaf-ui, which returns the
+same row as text for any header line or mode line.
 
 A theme switch lands in one pass.  The palette is derived from the panel's own
 parent frame, never from whichever frame holds the keyboard, so a focused panel
