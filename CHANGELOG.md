@@ -9,7 +9,9 @@
   title bar offers the content's modes with the content's current mode
   selected.  The content's own switch and the title-bar switch write the same
   mode cell, so an application inside a panel has one appearance state instead
-  of one per surface; the content's mode may be any palette, such as the
+  of one per surface; when the content holds a mode the switch does not offer,
+  such as the reader's sepia paper, the switch still renders its choices with
+  none selected; the content's mode may be any palette, such as the
   reader's sepia.  Panels whose content declares nothing keep the `:theme`
   behaviour.
 

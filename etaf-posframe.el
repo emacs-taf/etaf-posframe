@@ -56,6 +56,14 @@
 ;;   :fill-height  Keep the frame at the row budget instead of shrinking to the
 ;;               content, so an application with a fixed-size board fills the
 ;;               stage it asked for.
+;;   :resizable  Which edges accept a resize, default t: the user or a caller
+;;               may change the frame from any edge.  Nil refuses them and puts
+;;               the frame back; a list of `left', `right', `top' and `bottom'
+;;               accepts only the edges it names.  A width change that also
+;;               moved the frame counts as its left edge, otherwise as the
+;;               right one, and a height change reads the same way as `top' or
+;;               `bottom'.  The panel's own fit to its content is not a resize,
+;;               so a `nil' panel still shrinks to short content.
 ;;   :title      Title-bar text.  Without it the panel has no header line and
 ;;               cannot be dragged.
 ;;   :draggable  Move the panel by dragging its title bar.  Needs `:title'.
@@ -128,7 +136,7 @@
 ;;               application.  `etaf-posframe-app-quit' stops it either way.
 ;;   :on-stop    Function called with the session when the application stops.
 ;;   :width, :height, :at, :stack, :focusable, :focus-on-open, :auto-hide,
-;;   :theme, :border, :draggable
+;;   :theme, :border, :draggable, :resizable
 ;;               Same meaning as in `etaf-posframe-show'.  Defaults: top-right
 ;;               anchor, stacked, the default size, focused on open.
 ;;
@@ -421,7 +429,8 @@ They close the panel without consulting the View.")
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
   buffer frame parent parent-frame options timer restore-frame focused
-  fit-timer settled fit-window fit-count fit-muted-until close-callback)
+  fit-timer settled fit-window fit-count fit-muted-until close-callback
+  geometry)
 
 ;; A panel is returned to callers, so it must print: the Runtime and the Theme
 ;; ref are cyclic (refs, keymaps, closures), and `prin1' on them loops until
@@ -632,12 +641,17 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 
 (defconst etaf-posframe--show-keys
   '(:at :stack :width :height :fill-height :focusable :focus-on-open
-    :auto-hide :theme :border :draggable :title :key)
+    :auto-hide :theme :border :draggable :title :key :resizable)
   "Options accepted by `etaf-posframe-show'.")
 
 (defconst etaf-posframe--app-keys
   '(:create :view :require :shortcut :keep-alive :on-stop)
   "Options accepted by `etaf-posframe-register-app'.")
+
+(defconst etaf-posframe--resize-sides '(left right top bottom)
+  "Sides a panel may be resized from, as `:resizable' lists them.
+`left' and `right' allow a width change from that edge, `top' and `bottom' a
+height change from that edge.")
 
 (defconst etaf-posframe--border-keys '(:width :color :focus :hover)
   "Fields of the `:border' option plist.")
@@ -676,6 +690,15 @@ With APP non-nil the registration keys are accepted as well."
                   (list (format "Unknown panel option: %S" key))))
         (pcase key
           (:at (etaf-posframe--placement value))
+          (:resizable
+           (unless (or (memq value '(t nil))
+                       (and (proper-list-p value)
+                            (cl-every (lambda (side)
+                                        (memq side etaf-posframe--resize-sides))
+                                      value)))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :resizable must be t, nil or a list of %s: %S"
+                                   etaf-posframe--resize-sides value)))))
           ((or :stack :fill-height :focusable :focus-on-open :draggable
                :keep-alive)
            (unless (memq value '(t nil))
@@ -772,6 +795,7 @@ With APP non-nil the registration keys are accepted as well."
                         (cons :focusable nil)
                         (cons :draggable nil)
                         (cons :title nil)
+                        (cons :resizable t)
                         (cons :theme 'auto)))
       (unless (plist-member options (car pair))
         (setq options (plist-put options (car pair) (cdr pair)))))
@@ -1255,6 +1279,7 @@ Re-fit once when the settled window width changes the content height."
           (apply #'posframe-show buffer
                  (plist-put (copy-sequence args) :height settled))
           (etaf-posframe--fit-height panel window)))
+      (etaf-posframe--remember-geometry panel (window-frame window))
       (window-frame window))))
 
 (defun etaf-posframe--border-color (panel focused hovered)
@@ -1878,14 +1903,78 @@ or nil when it hid one."
         (progn (etaf-posframe-hide panel) nil)
       (apply #'etaf-posframe-show view options))))
 
-;;;###autoload
+(defun etaf-posframe--remember-geometry (panel frame)
+  "Record FRAME's settled size and position as PANEL's resize baseline.
+GEOMETRY is (WIDTH HEIGHT LEFT . TOP) in pixels.  A resize is attributed to the
+edge that moved, and a refused edge is restored to these numbers, so they are
+what this package last wrote, not what a caller asked for."
+  (when (frame-live-p frame)
+    (let ((position (frame-position frame)))
+      (setf (etaf-posframe--panel-geometry panel)
+            (list (frame-pixel-width frame) (frame-pixel-height frame)
+                  (car position) (cdr position))))))
+
+(defun etaf-posframe--resize-side (panel frame)
+  "Return the (HORIZONTAL . VERTICAL) edges a resize of FRAME moved.
+A width change that also moved the frame horizontally came from its left edge,
+otherwise from the right one; the same rule reads a height change as `top' or
+`bottom'."
+  (let* ((geometry (etaf-posframe--panel-geometry panel))
+         (now (frame-position frame))
+         (moved-x (and geometry (/= (nth 2 geometry) (car now))))
+         (moved-y (and geometry (/= (nth 3 geometry) (cdr now)))))
+    (cons (if moved-x 'left 'right)
+          (if moved-y 'top 'bottom))))
+
+(defun etaf-posframe--resize-permitted (panel frame)
+  "Return the (HORIZONTAL-OK . VERTICAL-OK) a resize of FRAME may change.
+The panel's `:resizable' option decides: t allows every edge, nil allows
+none, and a list allows the axes whose dragged edge it names."
+  (let* ((resizable (plist-get (etaf-posframe--panel-options panel) :resizable))
+         (side (etaf-posframe--resize-side panel frame)))
+    (if (eq resizable t)
+        (cons t t)
+      (cons (and (listp resizable) (memq (car side) resizable) t)
+            (and (listp resizable) (memq (cdr side) resizable) t)))))
+
+(defun etaf-posframe--restore-frame (panel window permitted)
+  "Set back the edges PANEL does not accept a resize from.
+PERMITTED is the (HORIZONTAL-OK . VERTICAL-OK) of this resize.  A refused width
+or height returns to the settled geometry; a refused horizontal edge that moved
+also returns the frame to its settled position, so a left-edge drag leaves no
+gap between the frame and its layout.  Return non-nil when it moved the frame."
+  (let* ((frame (window-frame window))
+         (geometry (etaf-posframe--panel-geometry panel))
+         (now (frame-position frame))
+         (width (if (car permitted)
+                    (frame-pixel-width frame)
+                  (nth 0 geometry)))
+         (height (if (cdr permitted)
+                     (frame-pixel-height frame)
+                   (nth 1 geometry)))
+         (moved nil))
+    (when (and geometry
+               (or (/= width (frame-pixel-width frame))
+                   (/= height (frame-pixel-height frame))))
+      (set-frame-size frame width height t)
+      (setq moved t))
+    (when (and geometry
+               (not (car permitted))
+               (or (/= (nth 2 geometry) (car now))
+                   (/= (nth 3 geometry) (cdr now))))
+      (set-frame-position frame (nth 2 geometry) (nth 3 geometry))
+      (setq moved t))
+    moved))
+
 (defun etaf-posframe--adopt-frame-size (panel window)
   "Adopt the width and row budget of a frame resized from outside.
-An outside resize (a caller's `set-frame-size', a tiling step) sets the frame
-size, so the canvas follows it instead of snapping the frame back to the
-columns and rows the panel opened with.  A taller or shorter frame becomes the
-new row budget, which lets a View that fills its viewport, such as a complete
-app, show more or fewer rows.  Return non-nil when the panel adopted a size."
+An outside resize (the user dragging an edge, a caller's `set-frame-size', a
+tiling step) sets the frame size, so the canvas follows it instead of snapping
+the frame back to the columns and rows the panel opened with.  A taller or
+shorter frame becomes the new row budget, which lets a View that fills its
+viewport, such as a complete app, show more or fewer rows.  `:resizable'
+narrows which edges accept a resize, and a refused edge is put back.  Return
+non-nil when the panel adopted a size or restored one."
   (let* ((frame (window-frame window))
          (options (etaf-posframe--panel-options panel))
          (char (frame-char-width frame))
@@ -1897,32 +1986,42 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
                              (float (frame-char-height frame)))))
          (budget (etaf-posframe--row-budget panel))
          (content (etaf-posframe--lines (etaf-posframe--panel-buffer panel)))
+         (permitted (etaf-posframe--resize-permitted panel frame))
          (adopted options)
-         (resized nil))
-    (when (and (etaf-posframe--panel-settled panel)
-               (> width 0)
-               (/= width (or (plist-get options :pixel-width) 0)))
-      (setq adopted (plist-put (plist-put (copy-sequence adopted)
-                                         :pixel-width width)
-                               :width (max 1 (round (/ width (float char)))))
-            resized t)
-      (let ((theme-ref (etaf-posframe--panel-theme panel)))
-        (when (and (plist-get adopted :title) (etaf-ref-p theme-ref))
-          (etaf-posframe--refresh-header
-           panel (etaf-value theme-ref) (plist-get adopted :width)))))
+         (resized nil)
+         (restored nil))
+    (when (and (etaf-posframe--panel-settled panel) (> width 0))
+      (cond
+       ((= width (or (plist-get options :pixel-width) 0)))
+       ((not (car permitted))
+        (setq restored (etaf-posframe--restore-frame panel window permitted)))
+       (t
+        (setq adopted (plist-put (plist-put (copy-sequence adopted)
+                                           :pixel-width width)
+                                 :width (max 1 (round (/ width (float char)))))
+              resized t)
+        (let ((theme-ref (etaf-posframe--panel-theme panel)))
+          (when (and (plist-get adopted :title) (etaf-ref-p theme-ref))
+            (etaf-posframe--refresh-header
+             panel (etaf-value theme-ref) (plist-get adopted :width)))))))
     ;; A resize away from the row budget is the new budget: taller always, and
     ;; shorter only when it cuts into the content.  The panel's own fit sets
     ;; the frame to the content height, which must not shrink the budget.
     (when (and (etaf-posframe--panel-settled panel)
                (or (> rows budget) (< rows (min budget content))))
-      (setq adopted (plist-put (copy-sequence adopted) :height rows)
-            resized t))
+      (if (cdr permitted)
+          (setq adopted (plist-put (copy-sequence adopted) :height rows)
+                resized t)
+        ;; The height is restored by this panel's own fit, which runs next.
+        (unless restored
+          (setq restored (etaf-posframe--restore-frame panel window permitted)))))
     (when resized
       (setf (etaf-posframe--panel-options panel) adopted)
       ;; The retained renderer owns the layout, so the new size is laid out
       ;; once here, deferred out of the resize event that reported it.
-      (etaf-runtime-refit (etaf-posframe--panel-runtime panel) width rows))
-    resized))
+      (etaf-runtime-refit (etaf-posframe--panel-runtime panel)
+                          (plist-get adopted :pixel-width) rows))
+    (or resized restored)))
 
 ;;;###autoload
 (defun etaf-posframe--fit-now (panel)
@@ -1963,7 +2062,8 @@ run away with the CPU."
                   (fitted (etaf-posframe--resize-to-content panel window)))
               (when (and (or adopted fitted)
                          (etaf-posframe--panel-settled panel))
-                (etaf-posframe--fit panel)))))))))
+                (etaf-posframe--fit panel)))
+            (etaf-posframe--remember-geometry panel (window-frame window))))))))
 
 ;;;###autoload
 (defun etaf-posframe-refresh (&optional panel)
