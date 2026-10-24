@@ -72,8 +72,9 @@
 ;;   :border     Plist `(:width W :color C :focus F :hover H)' for the frame
 ;;               border: W pixels 0..19, and the resting, focused and hovered
 ;;               colours.  Defaults: `etaf-posframe-border-width', the Theme's
-;;               panel border, its accent, and the accent at 45% over the
-;;               surface.
+;;               panel border, and its accent mixed into the panel surface
+;;               with `etaf-posframe-border-focus-strength' or
+;;               `etaf-posframe-border-hover-strength'.
 ;;   :key        Identity of the panel.  Showing a View with a key that is
 ;;               already live replaces that panel; different keys keep their
 ;;               own frame, Runtime and position.
@@ -197,6 +198,21 @@
 ;; that accept the keyboard are focused.  The hover border needs no option:
 ;; the panel under the pointer paints its border accent and keeps the keyboard.
 ;;
+;; Variable: etaf-posframe-border-width
+;; Frame border width in pixels, 0..19, used when `:border' has no `:width'.
+;; Default 1.
+;;
+;; Variable: etaf-posframe-border-focus-strength
+;; How much of the Theme accent a focused border shows, 0 to 1.  Default 0.6;
+;; the border is the panel surface tinted toward the theme's `link' colour, so
+;; the panel follows the user's palette.  A panel's `:border' `:focus' colour
+;; replaces the tint.
+;;
+;; Variable: etaf-posframe-border-hover-strength
+;; The same for a hovered panel, default 0.3.  Keep it below
+;; `etaf-posframe-border-focus-strength' so hovering hints and clicking commits
+;; stay distinct; a panel's `:border' `:hover' colour replaces the tint.
+;;
 ;; A panel never enables `track-mouse': Emacs then selects the frame under the
 ;; pointer whenever it moves, so leaving a panel would take the keyboard with
 ;; the pointer.  The hover border reads the pointer from a timer instead, and
@@ -276,6 +292,23 @@ list; they come back when Emacs is active again.  Nil keeps them visible."
 A one pixel border in the theme's border colour is what separates the panel
 from the buffer behind it and makes it read as a floating surface."
   :type 'integer
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-border-focus-strength 0.60
+  "How much of the Theme accent a focused border shows, 0 to 1.
+The border is the panel surface tinted toward the Theme's `link' colour: 0
+keeps the surface and 1 paints the accent itself.  A per-panel `:border'
+`:focus' colour replaces the tint entirely."
+  :type 'number
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-border-hover-strength 0.30
+  "How much of the Theme accent a hovered border shows, 0 to 1.
+A hovered panel does not hold the keyboard, so it hints at the accent more
+weakly than a focused one.  Keep it below `etaf-posframe-border-focus-strength'
+so the two states stay distinct; a per-panel `:border' `:hover' colour
+replaces the tint entirely."
+  :type 'number
   :group 'etaf-posframe)
 
 (defconst etaf-posframe--stack-gap 6
@@ -876,24 +909,27 @@ start at zero, so (0 . 0) is its first cell."
         count))))
 
 (defun etaf-posframe--header-format (header theme width)
-  "Return HEADER as a full-width title bar for THEME and WIDTH columns."
+  "Return HEADER as a full-width title bar for THEME and WIDTH columns.
+The bar keeps the panel surface and adds a single hairline below it: a band
+lifted toward the foreground reads as a second surface in a light theme, and
+the theme's `header-line' box would draw a coloured outline around it."
   (when header
     (let* ((text (concat " " header))
            (padding (max 0 (- width (string-width text))))
            (bar (concat text (make-string padding ?\s)))
-           ;; The title bar reads as chrome, not as part of the surface: a
-           ;; lift toward the foreground separates it in either palette.
            (surface (etaf-posframe--mix (plist-get theme :ui-panel-bg)
-                                        (plist-get theme :ui-panel-fg) 0.07)))
+                                        (plist-get theme :ui-panel-fg) 0.03)))
       (propertize bar
                   'face (list :background surface
                               :foreground (plist-get theme :ui-panel-fg)
                               :weight 'bold
                               :height 1.0
                               ;; A theme may render its own header line
-                              ;; inverted; the title bar keeps the panel's
-                              ;; palette and paints every column.
+                              ;; inverted and boxed; the title bar keeps the
+                              ;; panel's palette, paints every column and owns
+                              ;; its own separator.
                               :inverse-video nil
+                              :box nil
                               :extend t)
                   'underline (list :color (plist-get theme :ui-panel-border)
                                    :style 'line)))))
@@ -1088,23 +1124,28 @@ Re-fit once when the settled window width changes the content height."
       (window-frame window))))
 
 (defun etaf-posframe--border-color (panel focused hovered)
-  "Return PANEL's border colour for the FOCUSED or HOVERED state."
+  "Return PANEL's border colour for the FOCUSED or HOVERED state.
+Focus and hover are the accent mixed into the surface, so the theme's own
+hue still shows without a saturated one-pixel outline; hover is the weaker
+hint and focus is the stronger one."
   (let* ((theme-ref (etaf-posframe--panel-theme panel))
          (palette (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
          (options (etaf-posframe--panel-options panel))
          (border (plist-get options :border))
+         (surface (or (plist-get palette :ui-panel-bg)
+                      (plist-get palette :ui-panel-border)))
          (resting (or (plist-get border :color)
                       (plist-get palette :ui-panel-border)))
          (accent (or (plist-get border :focus)
                      (plist-get palette :ui-accent))))
-    (cond (focused accent)
-          ;; A hovered panel does not hold the keyboard, so it takes the
-          ;; accent diluted into the surface: the border brightens into the
-          ;; full accent when the click lands.
+    (cond ((and focused (plist-get border :focus)) (plist-get border :focus))
+          (focused (and accent (etaf-posframe--mix surface accent
+                                                   etaf-posframe-border-focus-strength)))
+          ;; A hovered panel does not hold the keyboard, so it takes a weak
+          ;; accent hint; the border commits to the accent when the click lands.
           (hovered (or (plist-get border :hover)
-                       (etaf-posframe--mix (or (plist-get palette :ui-panel-bg)
-                                               resting)
-                                           accent 0.45)))
+                       (and accent (etaf-posframe--mix surface accent
+                                                      etaf-posframe-border-hover-strength))))
           (t resting))))
 
 (defun etaf-posframe--paint-border (panel)

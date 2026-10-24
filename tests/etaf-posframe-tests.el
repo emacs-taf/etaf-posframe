@@ -184,6 +184,15 @@ follows is answered instead."
                         '(0.2126 0.7152 0.0722)
                         (color-name-to-rgb color))))
 
+(defun etaf-posframe-tests--mix (from to amount)
+  "Mix hex colors FROM and TO by AMOUNT toward TO."
+  (let ((start (color-name-to-rgb from))
+        (end (color-name-to-rgb to)))
+    (apply #'color-rgb-to-hex
+           (append (cl-mapcar (lambda (a b) (+ a (* (- b a) amount)))
+                              start end)
+                   '(2)))))
+
 (ert-deftest etaf-posframe-frame-is-as-wide-as-the-canvas ()
   "A panel frame is exactly as wide as its content columns.
 The frame used to keep whatever width posframe gave it, so a font metric
@@ -222,20 +231,33 @@ mismatch left empty frame to the right of the canvas."
       (etaf-posframe-hide panel))))
 
 (ert-deftest etaf-posframe-header-bar-paints-the-full-width ()
-  "The title bar covers every column and keeps the panel's own palette."
+  "The title bar covers every column, keeps the panel's palette and owns its outline.
+A light theme's `header-line' box would draw a dark outline around the bar, so
+the bar clears the box and keeps one hairline of its own."
   (skip-unless (display-graphic-p))
   (let* ((parent (selected-frame))
+         (palette (etaf-posframe-theme parent))
          (panel (etaf-posframe-show (etaf-view (text "panel"))
                                     :width 24 :title "ETAF")))
     (unwind-protect
         (let* ((frame (etaf-posframe-tests--panel-frame parent))
                (header (with-current-buffer (etaf-posframe-tests--panel-buffer frame)
                          header-line-format))
-               (face (get-text-property 0 'face header)))
+               (face (get-text-property 0 'face header))
+               (surface (etaf-posframe-tests--mix
+                         (plist-get palette :ui-panel-bg)
+                         (plist-get palette :ui-panel-fg) 0.03)))
           (should (= 24 (string-width header)))
           (should (eq t (plist-get face :extend)))
           (should (memq :inverse-video face))
-          (should-not (plist-get face :inverse-video)))
+          (should-not (plist-get face :inverse-video))
+          ;; The bar answers for its own outline, not the theme's.
+          (should (memq :box face))
+          (should-not (plist-get face :box))
+          (should (equal surface (plist-get face :background)))
+          (should (equal (plist-get palette :ui-panel-border)
+                         (plist-get (get-text-property 0 'underline header)
+                                    :color))))
       (etaf-posframe-hide panel))))
 
 (ert-deftest etaf-posframe-frame-follows-an-outside-resize ()
@@ -814,9 +836,14 @@ would offer the panel as a target instead of the application behind it."
       (set-frame-parameter nil 'background-mode mode))))
 
 (ert-deftest etaf-posframe-hover-is-dimmer-than-focus ()
-  "A hovered panel takes half the accent, so only focus paints it fully."
+  "Focus and hover mix the accent into the surface at their own strength."
   (skip-unless (display-graphic-p))
   (let* ((origin (etaf-posframe-tests--top-frame))
+         (palette (etaf-posframe-theme origin))
+         (surface (plist-get palette :ui-panel-bg))
+         (accent (plist-get palette :ui-accent))
+         (etaf-posframe-border-focus-strength 0.45)
+         (etaf-posframe-border-hover-strength 0.20)
          (panel (etaf-posframe-show (etaf-view (text "tone"))
                                     :key 'hover-tone :width 24 :height 2
                                     :focusable t))
@@ -824,17 +851,19 @@ would offer the panel as a target instead of the application behind it."
     (unwind-protect
         (progn
           (should (eq (selected-frame) frame))
-          (let ((focus (face-attribute 'child-frame-border :background frame)))
-            (select-frame origin)
+          (should (equal (etaf-posframe-tests--mix surface accent 0.45)
+                         (face-attribute 'child-frame-border :background frame)))
+          (select-frame origin)
+          (etaf-posframe-tests--with-pointer-on
+           origin (lambda () (run-hooks 'post-command-hook)))
+          (let ((resting (face-attribute 'child-frame-border :background frame)))
+            (should (equal (plist-get palette :ui-panel-border) resting))
             (etaf-posframe-tests--with-pointer-on
-             origin (lambda () (run-hooks 'post-command-hook)))
-            (let ((resting (face-attribute 'child-frame-border :background frame)))
-              (should-not (equal resting focus))
-              (etaf-posframe-tests--with-pointer-on
-               frame (lambda () (run-hooks 'post-command-hook)))
-              (let ((hover (face-attribute 'child-frame-border :background frame)))
-                (should-not (equal hover focus))
-                (should-not (equal hover resting))))))
+             frame (lambda () (run-hooks 'post-command-hook)))
+            (let ((hover (face-attribute 'child-frame-border :background frame)))
+              (should (equal (etaf-posframe-tests--mix surface accent 0.20)
+                             hover))
+              (should-not (equal hover resting)))))
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 

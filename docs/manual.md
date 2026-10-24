@@ -108,7 +108,7 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:focus-on-open` | `t` / `nil` | same as `:focusable` | Select the panel when it opens.  Nil on a focusable panel leaves it unfocused until it is clicked; it means nothing on a non-focusable panel. |
 | `:auto-hide` | `nil` / `t` / positive number | `nil` (focusable), `t` (passive) | `nil` keeps the panel until it is closed; `t` hides it as soon as the user works elsewhere (a preview disappears when the pointer or the keyboard moves on); a number hides it after that many seconds. |
 | `:theme` | `auto` / `light` / `dark` / Theme plist or ref | `auto` | `auto` follows the Emacs theme; `light` or `dark` pin the panel to that palette; a Theme plist or a reactive ref uses that palette as it is. |
-| `:border` | plist `(:width W :color C :focus F :hover H)` | 1 px, theme colours | Frame border: W pixels 0..19, the resting colour, the focused colour and the hovered colour.  The focused default is the Theme's accent; the hovered default is the accent at 45% over the surface, so hovering hints and clicking commits. |
+| `:border` | plist `(:width W :color C :focus F :hover H)` | 1 px, theme colours | Frame border: W pixels 0..19, the resting colour, the focused colour and the hovered colour.  The focused default mixes the Theme's accent into the panel surface by `etaf-posframe-border-focus-strength` (0.6) and the hovered default by `etaf-posframe-border-hover-strength` (0.3), so focus follows the theme's hue without a saturated one-pixel outline, hovering hints and clicking commits. |
 | `:key` | symbol | none | Identity of the panel.  A show with a live key replaces that panel; different keys keep their own frame, Runtime and position. |
 
 Unknown keys, a size that is neither a positive cell count nor a fraction, an
@@ -319,9 +319,11 @@ that palette whoever the Emacs theme is (the frame's accent still
 follows), while the default `'auto` follows the frame.  Every palette carries
 `:ui-mode` (`light` or `dark`), so a View that owns its own light and dark
 palettes can read the panel's mode instead of the frame's `background-mode`.  The header line is a
-full-width title bar: a surface lifted 7% toward the foreground separates it
-from the panel body, and it keeps the panel's colors and fills every column
-even when the frame's own `header-line` face is inverted.
+full-width title bar: a surface lifted 3% toward the foreground and one
+hairline below it separate it from the panel body, and the bar clears the
+theme's `header-line` box instead of drawing its outline, so a light theme
+has no dark outline around the title.  It keeps the panel's colors and fills
+every column even when the frame's own `header-line` face is inverted.
 
 A theme switch lands in one pass.  The palette is derived from the panel's own
 parent frame, never from whichever frame holds the keyboard, so a focused panel
