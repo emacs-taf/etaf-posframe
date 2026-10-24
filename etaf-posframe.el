@@ -58,7 +58,8 @@
 ;;               stage it asked for.
 ;;   :resizable  Which edges accept a resize, default t: the user or a caller
 ;;               may change the frame from any edge.  Nil refuses them and puts
-;;               the frame back; a list of `left', `right', `top' and `bottom'
+;;               the frame back where it was; a list of `left', `right', `top'
+;;               and `bottom'
 ;;               accepts only the edges it names.  A width change that also
 ;;               moved the frame counts as its left edge, otherwise as the
 ;;               right one, and a height change reads the same way as `top' or
@@ -430,7 +431,7 @@ They close the panel without consulting the View.")
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
   buffer frame parent parent-frame options timer restore-frame focused
   fit-timer settled fit-window fit-count fit-muted-until close-callback size
-  pin-applied)
+  position pin-applied)
 
 ;; A panel is returned to callers, so it must print: the Runtime and the Theme
 ;; ref are cyclic (refs, keymaps, closures), and `prin1' on them loops until
@@ -1924,10 +1925,16 @@ or nil when it hid one."
 (defun etaf-posframe--remember-size (panel window)
   "Record WINDOW's settled text size as PANEL's resize baseline.
 The size is (WIDTH . HEIGHT) of the text area in pixels, which is what
-`set-frame-size' takes back; a refused resize returns to it."
+`set-frame-size' takes back; a refused resize returns to it.  The frame's
+position is recorded with it, because a top or left edge drag moves the frame
+origin while it resizes, and a refused axis must not leave the panel
+somewhere else."
   (when (window-live-p window)
-    (setf (etaf-posframe--panel-size panel)
-          (cons (window-body-width window t) (window-pixel-height window)))))
+    (let ((frame (window-frame window)))
+      (setf (etaf-posframe--panel-size panel)
+            (cons (window-body-width window t) (window-pixel-height window))
+            (etaf-posframe--panel-position panel)
+            (frame-position frame)))))
 
 (defun etaf-posframe--resize-permitted (panel)
   "Return the (WIDTH-OK . HEIGHT-OK) PANEL's `:resizable' option allows.
@@ -1946,10 +1953,13 @@ height change."
 (defun etaf-posframe--restore-frame-size (panel window permitted)
   "Set back the axes PANEL's `:resizable' does not allow.
 PERMITTED is its (WIDTH-OK . HEIGHT-OK).  An allowed axis keeps the size the
-caller asked for; a refused axis returns to the settled size.  Return non-nil
-when the frame was set back."
+caller asked for and the origin its edge moved; a refused axis returns to the
+settled size and origin, so a top or left edge drag cannot slide the panel.
+Return non-nil when the frame was set back."
   (let* ((frame (window-frame window))
          (size (etaf-posframe--panel-size panel))
+         (position (etaf-posframe--panel-position panel))
+         (origin (frame-position frame))
          (width (if (car permitted)
                     (window-body-width window t)
                   (car size)))
@@ -1961,6 +1971,15 @@ when the frame was set back."
                (or (/= width (window-body-width window t))
                    (/= height (window-pixel-height window))))
       (set-frame-size frame width height t)
+      (setq moved t))
+    (when (and position
+               (or (and (not (car permitted))
+                        (/= (car origin) (car position)))
+                   (and (not (cdr permitted))
+                        (/= (cdr origin) (cdr position)))))
+      (set-frame-position frame
+                          (if (car permitted) (car origin) (car position))
+                          (if (cdr permitted) (cdr origin) (cdr position)))
       (setq moved t))
     moved))
 

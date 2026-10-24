@@ -216,7 +216,8 @@ content's mode cell."
                                     :resizable nil :at 'frame-top-right))
          (window nil)
          (body nil)
-         (rows nil))
+         (rows nil)
+         (origin nil))
     (unwind-protect
         (progn
           (etaf-posframe-test--settle 0.2)
@@ -229,7 +230,24 @@ content's mode cell."
           (etaf-posframe-test--settle 0.3)
           (let ((settled (etaf-posframe-test--window panel)))
             (should (= body (window-body-width settled t)))
-            (should (= rows (window-pixel-height settled)))))
+            (should (= rows (window-pixel-height settled))))
+          ;; A top or left edge drag moves the frame origin with the size, so
+          ;; a refused resize must put the panel back where it was as well.
+          (setq origin (frame-position (etaf-posframe-panel-frame panel)))
+          (set-frame-position (etaf-posframe-panel-frame panel)
+                              (+ (car origin)
+                                 (* 2 (frame-char-width (window-frame window))))
+                              (+ (cdr origin)
+                                 (* 2 (frame-char-height (window-frame window)))))
+          (set-frame-size (etaf-posframe-panel-frame panel)
+                          (- body (* 4 (frame-char-width (window-frame window))))
+                          (- rows (* 2 (frame-char-height (window-frame window)))) t)
+          (etaf-posframe-test--settle 0.3)
+          (let ((settled (etaf-posframe-test--window panel)))
+            (should (= body (window-body-width settled t)))
+            (should (= rows (window-pixel-height settled)))
+            (should (equal origin
+                           (frame-position (etaf-posframe-panel-frame panel))))))
       (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
 
 (ert-deftest etaf-posframe-resizable-list-limits-the-axes ()
