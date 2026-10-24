@@ -497,9 +497,14 @@ literal token plist accepted by `etaf-theme-provide'."
 ;;; Themed surface
 
 (etaf-define-component etaf-posframe--surface (&key theme content)
-  "Provide THEME to the panel's CONTENT View."
-  :setup (etaf-theme-provide theme)
-  :render (etaf-view (expr content)))
+  "Provide THEME and its appearance to the panel's CONTENT View.
+CONTENT is a function returning the View, so the View is built inside this
+component's context and inherits both."
+  :setup (progn
+           (etaf-theme-provide theme)
+           (etaf-appearance-provide
+            (etaf-computed (lambda () (plist-get (etaf-value theme) :ui-mode)))))
+  :render (etaf-view (expr (funcall content))))
 
 ;;; Options
 
@@ -1417,7 +1422,7 @@ described in the package Commentary."
                       (lambda ()
                         (etaf-view
                          (etaf-posframe--surface :theme theme-ref
-                                                 :content resolved)))
+                                                 :content (lambda () resolved))))
                       (list :viewport-width (* columns char-width)
                             :viewport-height max-height))
           (let ((runtime (etaf-runtime-for-buffer buffer)))

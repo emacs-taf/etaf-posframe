@@ -848,5 +848,21 @@ would offer the panel as a target instead of the application behind it."
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
+(ert-deftest etaf-posframe-provides-the-panel-appearance ()
+  "A View reads the panel's appearance, pinned or following the frame."
+  (skip-unless (display-graphic-p))
+  (let ((panel (etaf-posframe-show
+                (etaf-view (expr (format "appearance:%s" (etaf-appearance))))
+                :key 'appearance :width 24 :height 2 :pinned t
+                :theme-mode 'light)))
+    (unwind-protect
+        (should (string-match-p
+                 "appearance:light"
+                 (with-current-buffer (window-buffer
+                                       (frame-root-window
+                                        (etaf-posframe-panel-frame panel)))
+                   (buffer-substring-no-properties (point-min) (point-max)))))
+      (etaf-posframe-hide panel))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

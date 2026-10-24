@@ -204,6 +204,11 @@
    "name": "etaf-posframe-hover-is-dimmer-than-focus",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A hovered border takes half the accent while the focused border paints it fully."
+  },
+  {
+   "name": "etaf-posframe-provides-the-panel-appearance",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A View inside a panel reads the panel's light or dark appearance through etaf-appearance."
   }
  ]
 }
