@@ -323,6 +323,14 @@ full-width title bar: a surface lifted 7% toward the foreground separates it
 from the panel body, and it keeps the panel's colors and fills every column
 even when the frame's own `header-line` face is inverted.
 
+A theme switch lands in one pass.  The palette is derived from the panel's own
+parent frame, never from whichever frame holds the keyboard, so a focused panel
+keeps following the frame it was opened from.  Enabling the new theme and
+disabling the old one arrive as separate steps, and disabling every theme
+resets a child frame to white; the panels hold the palette they already paint
+until one coalesced pass repaints the frame colours, the title bar and every
+View together, so a switch never flashes an intermediate surface.
+
 A panel that builds its own themed boundary must pass the View as a component
 property and render it inside the component, not through the default slot:
 

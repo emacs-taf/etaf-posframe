@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- A theme switch repaints every live panel in one pass.  The palette was
+  derived with an explicit nil `INHERIT`, which answers for the selected frame:
+  a panel that held the keyboard took its own colours as the theme, so after a
+  switch it painted a wrong mixed surface instead of the new palette.  The
+  palette now comes from the panel's parent frame, whatever holds the keyboard.
+- Disabling the old theme and enabling the new one arrive as separate steps,
+  and disabling every theme resets a child frame to white.  The panels now keep
+  the palette they already paint until one coalesced pass repaints the frame
+  colours, the title bar and every View together, so a switch no longer flashes
+  an intermediate surface behind a 0.1 s timer.
+
 - A panel no longer enables buffer-level `track-mouse`.  Enabling it made Emacs
   select the frame under the pointer whenever the pointer moved, so moving the
   pointer off a focused panel moved the keyboard to the frame behind it.  The

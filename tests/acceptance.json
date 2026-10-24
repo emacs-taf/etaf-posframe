@@ -224,6 +224,16 @@
    "name": "etaf-posframe-pointer-leaving-keeps-the-focus-border",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "Moving the pointer off a focused panel keeps the panel selected and its focused border."
+  },
+  {
+   "name": "etaf-posframe-theme-answers-for-its-own-frame",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A frame's palette follows that frame, even while another frame, such as a focused panel, holds the keyboard."
+  },
+  {
+   "name": "etaf-posframe-theme-switch-lands-in-one-pass",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A theme switch repaints a focused panel and its title bar from the parent frame's new palette in one pass."
   }
  ]
 }

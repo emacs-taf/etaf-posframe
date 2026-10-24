@@ -946,5 +946,73 @@ would offer the panel as a target instead of the application behind it."
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
+(ert-deftest etaf-posframe-theme-answers-for-its-own-frame ()
+  "A frame's palette does not depend on which frame is selected.
+`face-attribute' with an explicit nil inherit answers for the selected frame,
+so a panel that held the keyboard used to derive its palette from itself."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'theme-frame :width 20 :height 2
+                                    :focusable t :focus-on-open t))
+         (frame (etaf-posframe-panel-frame panel))
+         (parent (frame-parent frame)))
+    (unwind-protect
+        (progn
+          ;; The panel holds the keyboard while its palette is derived.
+          (should (eq (selected-frame) frame))
+          (let ((palette (etaf-posframe-theme parent)))
+            (should (equal (face-attribute 'default :background parent)
+                           (plist-get palette :ui-bg)))
+            (should-not (equal (frame-parameter frame 'background-color)
+                               (plist-get palette :ui-bg)))
+            ;; The same function still answers for the frame it was given.
+            (should (equal (plist-get (etaf-posframe-theme frame) :ui-bg)
+                           (frame-parameter frame 'background-color)))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
+(ert-deftest etaf-posframe-theme-switch-lands-in-one-pass ()
+  "A theme switch repaints a focused panel from its parent frame's palette.
+The switch used to leave the panel on the old surface behind a 0.1 s timer,
+and a focused panel derived a wrong palette from the frame it had selected."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (enabled (copy-sequence custom-enabled-themes))
+         (panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'theme-switch :width 24 :height 2
+                                    :title "ETAF"))
+         (frame (etaf-posframe-panel-frame panel))
+         (header (lambda ()
+                   (with-current-buffer (window-buffer (frame-root-window frame))
+                     (let ((face (get-text-property 0 'face header-line-format)))
+                       (and (listp face) (plist-get face :background))))))
+         (before (funcall header)))
+    (unwind-protect
+        (progn
+          ;; A focused panel is the case that used to derive its own colours.
+          (select-frame frame)
+          (mapc #'disable-theme custom-enabled-themes)
+          (load-theme 'modus-vivendi t)
+          ;; The coalesced pass runs as soon as Emacs waits again.
+          (sleep-for 0.2)
+          (let* ((parent (frame-parent frame))
+                 (palette (etaf-posframe-theme parent)))
+            (should (eq 'dark (plist-get palette :ui-mode)))
+            (should (equal (face-attribute 'default :background parent)
+                           (plist-get palette :ui-bg)))
+            ;; The panel frame paints its surface, not the page behind it.
+            (should (equal (plist-get palette :ui-panel-bg)
+                           (frame-parameter frame 'background-color)))
+            (should (equal (plist-get palette :ui-fg)
+                           (frame-parameter frame 'foreground-color)))
+            ;; The title bar follows the same palette in the same pass.
+            (should-not (equal before (funcall header)))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame origin))
+      (mapc #'disable-theme custom-enabled-themes)
+      (dolist (theme enabled)
+        (ignore-errors (load-theme theme t))))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

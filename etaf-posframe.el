@@ -307,6 +307,9 @@ from the buffer behind it and makes it read as a floating surface."
 (defvar etaf-posframe--hover-timer nil
   "Timer that reads the pointer while panels exist.")
 
+(defvar etaf-posframe--theme-timer nil
+  "Pending coalesced theme pass for the live panels.")
+
 (defvar-local etaf-posframe--parent-panel nil
   "Panel anchored to this buffer, or nil.")
 
@@ -422,11 +425,15 @@ literal token plist accepted by `etaf-theme-provide'."
          (base (if pinned
                    (if (eq mode 'dark) etaf-posframe--dark-base
                      etaf-posframe--light-base)
+                 ;; Ask FRAME itself.  An explicit nil INHERIT answers for
+                 ;; the selected frame instead, and signals on an inherited
+                 ;; face such as `link', so a panel that held the keyboard
+                 ;; derived its palette from its own frame.
                  (cons (or (etaf-posframe--color
-                            (face-attribute 'default :background nil frame))
+                            (face-attribute 'default :background frame))
                            "#FFFFFF")
                        (or (etaf-posframe--color
-                            (face-attribute 'default :foreground nil frame))
+                            (face-attribute 'default :foreground frame))
                            "#000000"))))
          (bg (car base))
          (fg (cdr base))
@@ -444,7 +451,7 @@ literal token plist accepted by `etaf-theme-provide'."
          (border (etaf-posframe--mix panel fg 0.16))
          (muted (etaf-posframe--mix fg panel 0.42))
          (accent (or (etaf-posframe--color
-                      (ignore-errors (face-attribute 'link :foreground nil frame)))
+                      (ignore-errors (face-attribute 'link :foreground frame)))
                      (if dark "#6CB6FF" "#2F6FE4")))
          (tint (lambda (color amount)
                  (etaf-posframe--mix panel color amount))))
@@ -1318,8 +1325,36 @@ panel was hidden."
                         (error-message-string error)))))
     t))
 
+(defun etaf-posframe--set-frame-palette (frame palette)
+  "Paint FRAME as PANEL's surface from PALETTE.
+A theme switch resets a child frame's default face, so the surface colours and
+that face are set together; setting only the frame parameters leaves text
+without an explicit background on the old theme's colour.  The surface, not
+the page, is the frame paint: a sub-cell remainder at the edge must not show a
+second colour."
+  (set-face-attribute 'default frame
+                      :background (plist-get palette :ui-panel-bg)
+                      :foreground (plist-get palette :ui-panel-fg))
+  (set-frame-parameter frame 'background-color (plist-get palette :ui-panel-bg))
+  (set-frame-parameter frame 'foreground-color (plist-get palette :ui-fg)))
+
+(defun etaf-posframe--hold-theme (panel)
+  "Keep PANEL on the palette it already paints.
+`load-theme' changes the default face of every frame before it reports the
+switch, and disabling every theme resets a child frame to white.  Holding the
+palette keeps either intermediate state off the screen; the coalesced pass
+then re-derives once."
+  (let* ((theme (etaf-posframe--panel-theme panel))
+         (palette (and (etaf-ref-p theme) (etaf-value theme)))
+         (frame (etaf-posframe--panel-frame panel)))
+    (when (and palette (frame-live-p frame))
+      (etaf-posframe--set-frame-palette frame palette)
+      (ignore-errors (etaf-posframe--paint-border panel)))))
+
 (defun etaf-posframe--apply-theme ()
-  "Apply the current frame Theme to every live panel."
+  "Derive each live panel's Theme once from its parent frame.
+A switch that leaves the palette unchanged only re-asserts the frame colours,
+because repainting every View is the expensive part of a theme change."
   (dolist (panel (copy-sequence etaf-posframe--panels))
     (let ((theme (etaf-posframe--panel-theme panel))
           (parent-frame (etaf-posframe--panel-parent-frame panel))
@@ -1332,29 +1367,37 @@ panel was hidden."
                            parent-frame
                            (and (not (eq mode 'auto)) mode)))
                  (frame (etaf-posframe--panel-frame panel)))
-            (etaf-batch (setf (etaf-value theme) palette))
             (when (frame-live-p frame)
-              (set-frame-parameter frame 'background-color
-                                   (plist-get palette :ui-bg))
-              (set-frame-parameter frame 'foreground-color
-                                   (plist-get palette :ui-fg)))
-            (ignore-errors (etaf-posframe--paint-border panel))
-            (ignore-errors (etaf-posframe--sync-activation))
-            (let ((buffer (etaf-posframe--panel-buffer panel))
-                  (header (plist-get options :title))
-                  (width (plist-get options :width)))
-              (when (buffer-live-p buffer)
-                (with-current-buffer buffer
-                  (setq-local header-line-format
-                              (etaf-posframe--header-format
-                               header palette width)))))
-            ))))))
+              (etaf-posframe--set-frame-palette frame palette))
+            (unless (equal palette (etaf-value theme))
+              (etaf-batch (setf (etaf-value theme) palette))
+              (ignore-errors (etaf-posframe--paint-border panel))
+              (ignore-errors (etaf-posframe--sync-activation))
+              (let ((buffer (etaf-posframe--panel-buffer panel))
+                    (header (plist-get options :title))
+                    (width (plist-get options :width)))
+                (when (buffer-live-p buffer)
+                  (with-current-buffer buffer
+                    (setq-local header-line-format
+                                (etaf-posframe--header-format
+                                 header palette width))))))))))))
 
 (defun etaf-posframe--theme-changed (&rest _)
-  "Re-derive panels' Theme after `load-theme' finished."
-  (run-at-time 0.1 nil #'etaf-posframe--apply-theme))
+  "Coalesce a theme switch into one pass after the current command.
+`enable-theme-functions' and `disable-theme-functions' both report steps of
+one switch, and disabling every theme in the middle resets each child frame to
+white.  Holding the palette the panels already paint and re-deriving once
+after the command keeps them from flashing a half-switched surface."
+  (dolist (panel etaf-posframe--panels)
+    (ignore-errors (etaf-posframe--hold-theme panel)))
+  (when (timerp etaf-posframe--theme-timer)
+    (cancel-timer etaf-posframe--theme-timer))
+  (setq etaf-posframe--theme-timer
+        (and etaf-posframe--panels
+             (run-at-time 0 nil #'etaf-posframe--apply-theme))))
 
 (add-hook 'enable-theme-functions #'etaf-posframe--theme-changed)
+(add-hook 'disable-theme-functions #'etaf-posframe--theme-changed)
 (add-hook 'window-size-change-functions #'etaf-posframe--window-size-changed)
 
 (defun etaf-posframe--panel-for-key (key)
@@ -1473,6 +1516,8 @@ described in the package Commentary."
             ;; From here on a frame resized from outside re-lays the View out
             ;; at its new width instead of being snapped back.
             (setf (etaf-posframe--panel-settled panel) t)
+            (etaf-posframe--set-frame-palette
+             (etaf-posframe--panel-frame panel) (etaf-value theme-ref))
             (ignore-errors (etaf-posframe--paint-border panel))
             (ignore-errors (etaf-posframe--sync-activation))
             (with-current-buffer buffer
