@@ -20,6 +20,10 @@
 
 ### Fixed
 
+- A stacked panel now takes the row below the panel above it instead of
+  stepping down by its own height, so panels of different heights close up
+  instead of leaving a hole as tall as the difference between them.
+
 - Switching between `auto` and the frame's own mode no longer shifts the panel
   and title-bar colours: a pin that agrees with the frame keeps the frame's
   surface.  The mode now comes from the frame's actual background, so a theme

@@ -527,6 +527,34 @@ command after a close used to freeze."
       (ignore-errors (etaf-posframe-hide second))
       (ignore-errors (etaf-posframe-hide first)))))
 
+(ert-deftest etaf-posframe-stacks-a-tall-panel-against-a-short-one ()
+  "A panel with more content takes the next row instead of its own height.
+The stack stepped by the height of the panel being shown, so a panel taller
+than the one above it opened a hole as tall as the difference."
+  (skip-unless (display-graphic-p))
+  (let* ((rows (lambda (count)
+                 (etaf-view (column :item-gap '(lh 0)
+                                    (expr (mapcar (lambda (i) (format "row %d" i))
+                                                  (number-sequence 1 count)))))))
+         (short (etaf-posframe-show (funcall rows 2) :key 'stack-short
+                                    :at 'frame-top-right :stack t
+                                    :width 20 :height 10 :title "short"))
+         (tall (etaf-posframe-show (funcall rows 8) :key 'stack-tall
+                                   :at 'frame-top-right :stack t
+                                   :width 20 :height 10 :title "tall")))
+    (unwind-protect
+        (let* ((first (etaf-posframe-panel-frame short))
+               (second (etaf-posframe-panel-frame tall))
+               (bottom (+ (frame-parameter first 'top) (frame-pixel-height first)))
+               (gap (- (frame-parameter second 'top) bottom)))
+          ;; Both right edges land on the anchor and the two frames touch.
+          (should (= (frame-parameter first 'left)
+                     (frame-parameter second 'left)))
+          (should (>= gap 0))
+          (should (< gap (frame-char-height first))))
+      (ignore-errors (etaf-posframe-hide tall))
+      (ignore-errors (etaf-posframe-hide short)))))
+
 (ert-deftest etaf-posframe-draws-a-theme-bordered-panel ()
   "A panel carries a border in the given colour without losing content width."
   (skip-unless (display-graphic-p))

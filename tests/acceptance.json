@@ -132,6 +132,11 @@
    "purpose": "Panels shown at one anchored place are stacked a gap apart at the same x, down to the last opened."
   },
   {
+   "name": "etaf-posframe-stacks-a-tall-panel-against-a-short-one",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel taller than the one above it takes the next row of the stack instead of stepping by its own height and leaving a hole."
+  },
+  {
    "name": "etaf-posframe-draws-a-theme-bordered-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A panel paints the requested border colour outside its text area, so the content keeps its exact width."

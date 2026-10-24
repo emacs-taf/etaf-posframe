@@ -42,9 +42,10 @@
 ;;               `(cells ROW COL)' for a character cell of the current window,
 ;;               `(pixels X . Y)' for frame pixels, or a posframe poshandler.
 ;;               Default 'point.
-;;   :stack      With an anchor `:at', keep the panel clear of the live panels
-;;               at that anchor: stack downward from a top or centre anchor and
-;;               upward from a bottom one.  Default nil.
+;;   :stack      With an anchor `:at', place the panel against the live panels
+;;               at that anchor: directly below the lowest one it meets, or
+;;               above the highest from a bottom anchor, in a column to the
+;;               left only when the frame has no room.  Default nil.
 ;;   :width      Content columns, default `etaf-posframe-default-width', or
 ;;               `(fraction 0.5)' for half the parent frame's width.  Clamped
 ;;               to the parent frame; a frame resized from outside becomes the
@@ -850,11 +851,46 @@ parent's scroll bar or window border."
        (< (nth 1 a) (+ (nth 1 b) (nth 3 b)))
        (> (+ (nth 1 a) (nth 3 a)) (nth 1 b))))
 
+(defun etaf-posframe--stack-clear-y (x y width height top bottom down others)
+  "Return the Y nearest Y where a WIDTH by HEIGHT panel at X is clear.
+DOWN stacks the panel below every panel it meets and otherwise stacks it above
+them, keeping `etaf-posframe--stack-gap' between the frames.  OTHERS are the
+live panels as (X Y WIDTH HEIGHT).  Return nil when no such Y lies between TOP
+and BOTTOM."
+  (let ((y y)
+        (guard 0))
+    (while (and (< guard 100)
+                (cl-some (lambda (other)
+                           (etaf-posframe--rect-overlap-p
+                            (list x y width height) other))
+                         others))
+      (let* ((rect (list x y width height))
+             (blocking (cl-remove-if-not
+                        (lambda (other)
+                          (etaf-posframe--rect-overlap-p rect other))
+                        others))
+             (edge (if down
+                       (apply #'max
+                              (mapcar (lambda (other)
+                                        (+ (nth 1 other) (nth 3 other)))
+                                      blocking))
+                     (apply #'min
+                            (mapcar (lambda (other) (nth 1 other))
+                                    blocking)))))
+        (setq y (if down
+                    (+ edge etaf-posframe--stack-gap)
+                  (- edge etaf-posframe--stack-gap height)))
+        (cl-incf guard)))
+    (and (>= y top)
+         (<= (+ y height) bottom)
+         y)))
+
 (defun etaf-posframe--stacking-poshandler (at)
   "Return a poshandler placing the panel at AT, clear of live panels.
-Panels opened at the same anchor tile in order: down a column from a top or
-centre anchor (up from a bottom one), then a column to the left when the frame
-runs out of room, never outside the frame."
+A panel stacks against the live panels however tall each of them turned out:
+from a top or centre anchor it sits directly below the lowest panel it meets,
+from a bottom one directly above the highest, and a column to the left takes it
+when the frame has no room left, never outside the frame."
   (let* ((base (etaf-posframe--poshandler at))
          (place (cadr (split-string (symbol-name at) "-")))
          (down (not (and place (string-prefix-p "bottom" place)))))
@@ -864,7 +900,6 @@ runs out of room, never outside the frame."
              (y0 (cdr position))
              (width (or (plist-get info :posframe-width) 0))
              (height (or (plist-get info :posframe-height) 0))
-             (step (+ height etaf-posframe--stack-gap))
              (frame-rect (etaf-posframe--rect info 'frame))
              (left (nth 0 frame-rect))
              (top (nth 1 frame-rect))
@@ -872,21 +907,14 @@ runs out of room, never outside the frame."
              (others (delq nil (mapcar (lambda (panel)
                                          (etaf-posframe--frame-rect
                                           (etaf-posframe--panel-frame panel)))
-                                       (etaf-posframe-panels))))
-             (per-column (max 1 (floor (/ (- bottom top) (float step))))))
-        (cl-loop for slot from 0 below 60
-                 for column = (/ slot per-column)
-                 for row = (% slot per-column)
-                 for x = (max left (- x0 (* column (+ width etaf-posframe--stack-gap))))
-                 for y = (+ y0 (* (if down 1 -1) row step))
-                 for rect = (list x y width height)
-                 when (and (>= y top)
-                           (<= (+ y height) bottom)
-                           (not (cl-some (lambda (other)
-                                           (etaf-posframe--rect-overlap-p rect other))
-                                         others)))
-                 return (cons x y)
-                 finally return (cons x0 y0))))))
+                                       (etaf-posframe-panels)))))
+        (or (cl-loop for column from 0 below 60
+                     for x = (- x0 (* column (+ width etaf-posframe--stack-gap)))
+                     while (>= x left)
+                     for y = (etaf-posframe--stack-clear-y
+                              x y0 width height top bottom down others)
+                     when y return (cons x y))
+            (cons x0 y0))))))
 
 (defun etaf-posframe--cell-poshandler (cell)
   "Return a poshandler that puts the panel at CELL, a (ROW . COLUMN) pair.
@@ -996,23 +1024,25 @@ The selected one is the panel's current `:theme'.")
   "Return HEADER as a full-width title bar for THEME and WIDTH columns.
 MODES, an alist of (MODE . LABEL), adds the theme toggle at the right with
 MODE selected; a panel without a switch passes nil and keeps a plain title
-bar.
+bar.  A content may hold a mode its switch does not offer, as the reader's
+sepia paper is, and the strip then shows its choices with none selected.
 
 The bar keeps the panel surface and adds a single hairline below it: a band
 lifted toward the foreground reads as a second surface in a light theme, and
 the theme's `header-line' box would draw a coloured outline around it."
   (when header
     (let* ((text (concat " " header))
-           (strip (and (assq mode modes)
+           (surface (etaf-posframe--mix (plist-get theme :ui-panel-bg)
+                                        (plist-get theme :ui-panel-fg) 0.03))
+           (strip (and modes
                        (etaf-toggle-strip
                         :options modes
-                        :value mode
+                        :value (and (assq mode modes) mode)
                         :theme theme
+                        :surface surface
                         :on-change #'etaf-posframe--choose-theme-mode)))
            (padding (max 0 (- width (string-width text)
                               (if strip (string-width strip) 0))))
-           (surface (etaf-posframe--mix (plist-get theme :ui-panel-bg)
-                                        (plist-get theme :ui-panel-fg) 0.03))
            (plain (propertize (concat text (make-string padding ?\s))
                               'face (list :background surface
                                           :foreground (plist-get theme :ui-panel-fg)
@@ -1030,14 +1060,7 @@ the theme's `header-line' box would draw a coloured outline around it."
                                                :style 'line))))
       ;; The strip keeps its own faces: `propertize' over the whole bar would
       ;; replace the segment faces with the title bar's.
-      (concat plain (if strip
-                        (etaf-toggle-strip
-                         :options modes
-                         :value mode
-                         :theme theme
-                         :surface surface
-                         :on-change #'etaf-posframe--choose-theme-mode)
-                      "")))))
+      (concat plain (or strip "")))))
 
 (defun etaf-posframe--prepare-buffer (buffer header theme width &optional mode)
   "Set BUFFER up as a panel surface with HEADER and THEME.
