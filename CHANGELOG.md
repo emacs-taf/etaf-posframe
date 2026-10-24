@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Removed
+
+- The Pomodoro example panel moved to its own application package,
+  [etaf-pomodoro](https://github.com/emacs-taf/etaf-pomodoro).  Its surface no
+  longer sits inside an `etaf-card`, so the panel frame is the only border and a
+  panel edge stays one pixel wide on every side.
+
 - A theme switch repaints every live panel in one pass.  The palette was
   derived with an explicit nil `INHERIT`, which answers for the selected frame:
   a panel that held the keyboard took its own colours as the theme, so after a

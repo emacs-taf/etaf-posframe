@@ -166,7 +166,6 @@ showing the same key again replaces that panel and leaves the others alone.
 
 ```elisp
 (etaf-posframe-show (etaf-ncm-view session) :key 'music :width 110 :height 30)
-(etaf-pomodoro-start)                  ;; :key 'pomodoro, its own frame
 (etaf-symbol-card-show)                ;; :key 'symbol-card, at point
 ```
 
