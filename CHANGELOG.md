@@ -4,6 +4,15 @@
 
 ### Added
 
+- A panel whose content declares its surface with `etaf-surface-declare`
+  paints its frame, title bar and border from that content's Theme, and its
+  title bar offers the content's modes with the content's current mode
+  selected.  The content's own switch and the title-bar switch write the same
+  mode cell, so an application inside a panel has one appearance state instead
+  of one per surface; the content's mode may be any palette, such as the
+  reader's sepia.  Panels whose content declares nothing keep the `:theme`
+  behaviour.
+
 - A panel title bar carries a theme toggle when its `:theme` is `auto`, `light`
   or `dark`: `亮`, `随` and `暗` in one row of equal-width boxes, the current
   mode filled with the theme accent.  A click repaints that panel for the rest

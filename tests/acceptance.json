@@ -240,6 +240,11 @@
    "name": "etaf-posframe-title-bar-toggles-theme-mode",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A title-bar segment click repaints the panel on that mode without changing the Emacs themes, and the selected segment takes no hover face."
+  },
+  {
+   "name": "etaf-posframe-title-bar-and-the-application-share-one-theme-state",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel whose content declared its surface paints the content's palette and offers its modes, so the application's own switch repaints the panel and a title-bar click writes the application's mode cell."
   }
  ]
 }

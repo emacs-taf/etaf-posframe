@@ -69,7 +69,10 @@
 ;;               after that many seconds.
 ;;   :theme      `auto' (default) follows the Emacs theme; `light' or `dark'
 ;;               pin the panel to that palette; a Theme plist (or a ref) uses
-;;               that palette as it is.
+;;               that palette as it is.  An application that declares its own
+;;               surface with `etaf-surface-declare' paints the panel from that
+;;               palette and brings its own mode switch, so `:theme' applies to
+;;               the panels whose content does not.
 ;;   :border     Plist `(:width W :color C :focus F :hover H)' for the frame
 ;;               border: W pixels 0..19, and the resting, focused and hovered
 ;;               colours.  Defaults: `etaf-posframe-border-width', the Theme's
@@ -428,6 +431,27 @@ They close the panel without consulting the View.")
 (defvar-local etaf-posframe--theme-ref nil
   "Theme ref of the panel mounted in this buffer.")
 
+(defvar-local etaf-posframe--surface nil
+  "Surface declaration the panel provides to its content, or nil.")
+
+(defvar-local etaf-posframe--appearance-ref nil
+  "Appearance ref the panel provides to the View mounted in this buffer.")
+
+(defvar-local etaf-posframe--surface-scope nil
+  "Effect scope watching the surface the panel's content declared.")
+
+(defun etaf-posframe--panel-surface (panel)
+  "Return the surface declaration PANEL provides to its content, or nil."
+  (let ((buffer (etaf-posframe--panel-buffer panel)))
+    (and (buffer-live-p buffer)
+         (buffer-local-value 'etaf-posframe--surface buffer))))
+
+(defun etaf-posframe--panel-appearance (panel)
+  "Return the appearance ref PANEL provides to its content, or nil."
+  (let ((buffer (etaf-posframe--panel-buffer panel)))
+    (and (buffer-live-p buffer)
+         (buffer-local-value 'etaf-posframe--appearance-ref buffer))))
+
 (defun etaf-posframe--panel-runtime (panel)
   "Return PANEL's mounted Runtime.
 It is looked up from the panel buffer, so the panel struct stays printable."
@@ -574,14 +598,17 @@ literal token plist accepted by `etaf-theme-provide'."
 
 ;;; Themed surface
 
-(etaf-define-component etaf-posframe--surface (&key theme content)
-  "Provide THEME and its appearance to the panel's CONTENT View.
+(etaf-define-component etaf-posframe--surface (&key theme appearance surface content)
+  "Provide THEME, APPEARANCE and the SURFACE slot to CONTENT.
 CONTENT is a function returning the View, so the View is built inside this
-component's context and inherits both."
+component's context and inherits all three.  SURFACE lets an application that
+owns its palette declare it to the panel instead of taking the panel's; see
+`etaf-surface-declare'."
   :setup (progn
            (etaf-theme-provide theme)
-           (etaf-appearance-provide
-            (etaf-computed (lambda () (plist-get (etaf-value theme) :ui-mode)))))
+           (etaf-appearance-provide appearance)
+           (etaf-surface-provide surface)
+           nil)
   :render (etaf-view (expr (funcall content))))
 
 ;;; Options
@@ -965,19 +992,20 @@ start at zero, so (0 . 0) is its first cell."
   "Segments of the title-bar theme toggle, in display order.
 The selected one is the panel's current `:theme'.")
 
-(defun etaf-posframe--header-format (header theme width &optional mode)
+(defun etaf-posframe--header-format (header theme width &optional modes mode)
   "Return HEADER as a full-width title bar for THEME and WIDTH columns.
-MODE, one of `light', `auto' or `dark', adds the theme toggle at the right;
-a panel with its own palette passes nil and keeps a plain title bar.
+MODES, an alist of (MODE . LABEL), adds the theme toggle at the right with
+MODE selected; a panel without a switch passes nil and keeps a plain title
+bar.
 
 The bar keeps the panel surface and adds a single hairline below it: a band
 lifted toward the foreground reads as a second surface in a light theme, and
 the theme's `header-line' box would draw a coloured outline around it."
   (when header
     (let* ((text (concat " " header))
-           (strip (and (assq mode etaf-posframe--theme-modes)
+           (strip (and (assq mode modes)
                        (etaf-toggle-strip
-                        :options etaf-posframe--theme-modes
+                        :options modes
                         :value mode
                         :theme theme
                         :on-change #'etaf-posframe--choose-theme-mode)))
@@ -1004,7 +1032,7 @@ the theme's `header-line' box would draw a coloured outline around it."
       ;; replace the segment faces with the title bar's.
       (concat plain (if strip
                         (etaf-toggle-strip
-                         :options etaf-posframe--theme-modes
+                         :options modes
                          :value mode
                          :theme theme
                          :surface surface
@@ -1013,7 +1041,8 @@ the theme's `header-line' box would draw a coloured outline around it."
 
 (defun etaf-posframe--prepare-buffer (buffer header theme width &optional mode)
   "Set BUFFER up as a panel surface with HEADER and THEME.
-MODE adds the title-bar theme toggle, as in `etaf-posframe--header-format'."
+MODE adds the title-bar theme toggle over `etaf-posframe--theme-modes', as in
+`etaf-posframe--header-format'."
   (let ((theme theme))
     (with-current-buffer buffer
       (erase-buffer)
@@ -1024,7 +1053,11 @@ MODE adds the title-bar theme toggle, as in `etaf-posframe--header-format'."
                                      (make-display-table))))
       (set-display-table-slot buffer-display-table 'truncation ?\s)
       (setq-local header-line-format
-                  (etaf-posframe--header-format header theme width mode))
+                  (etaf-posframe--header-format
+                   header theme width
+                   (and (assq mode etaf-posframe--theme-modes)
+                        etaf-posframe--theme-modes)
+                   mode))
       (setq-local mode-line-format nil)
       (setq-local cursor-type nil)
       (setq-local vertical-scroll-bar nil)
@@ -1401,6 +1434,11 @@ child frame is deleted, which then swallows the next command."
       (cancel-timer timer)
       (setf (etaf-posframe--panel-fit-timer panel) nil))
     (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when etaf-posframe--surface-scope
+          (ignore-errors (etaf-scope-stop etaf-posframe--surface-scope))
+          (setq etaf-posframe--surface-scope nil))))
+    (when (buffer-live-p buffer)
       (ignore-errors (posframe-hide buffer)))
     (when (buffer-live-p buffer)
       (ignore-errors (posframe-delete-frame buffer)))
@@ -1470,43 +1508,135 @@ then re-derives once."
       (etaf-posframe--set-frame-palette frame palette)
       (ignore-errors (etaf-posframe--paint-border panel)))))
 
-(defun etaf-posframe--refresh-header (panel palette)
-  "Rebuild PANEL's title bar for PALETTE and its current theme mode."
+(defun etaf-posframe--panel-adopted-p (panel)
+  "Return non-nil when PANEL's content declared the surface it paints.
+The slot itself always exists; only a content that declared its Theme owns
+the palette, and only then does the panel paint that palette."
+  (let ((surface (etaf-posframe--panel-surface panel)))
+    (and surface (etaf-surface-theme surface) t)))
+
+(defun etaf-posframe--panel-modes (panel)
+  "Return (MODES MODE) PANEL's title bar offers, or nil when it has no switch.
+An application that declared its surface brings its own modes and its own
+mode cell; otherwise the panel offers its own `:theme' mode."
+  (let* ((surface (etaf-posframe--panel-surface panel))
+         (modes (and surface (etaf-surface-modes surface)))
+         (mode-ref (and surface (etaf-surface-mode surface))))
+    (if (and modes mode-ref)
+        (list modes (etaf-value mode-ref))
+      (let ((option (plist-get (etaf-posframe--panel-options panel) :theme)))
+        (when (memq option '(light auto dark))
+          (list etaf-posframe--theme-modes option))))))
+
+(defun etaf-posframe--refresh-header (panel palette &optional width)
+  "Rebuild PANEL's title bar for PALETTE and the mode it currently shows.
+WIDTH, when given, is the new content width of a panel being resized."
   (let ((buffer (etaf-posframe--panel-buffer panel))
-        (options (etaf-posframe--panel-options panel)))
+        (options (etaf-posframe--panel-options panel))
+        (offered (etaf-posframe--panel-modes panel)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (setq-local header-line-format
                     (etaf-posframe--header-format
                      (plist-get options :title) palette
-                     (plist-get options :width)
-                     (and (memq (plist-get options :theme) '(light auto dark))
-                          (plist-get options :theme))))))))
+                     (or width (plist-get options :width))
+                     (nth 0 offered) (nth 1 offered)))))))
+
+(defun etaf-posframe--update-appearance (panel)
+  "Point PANEL's appearance ref at the appearance its content should see.
+An application that declared its surface follows the parent frame, because
+the panel frame itself now paints that application's palette; every other
+panel passes the polarity of its own palette."
+  (let ((appearance (etaf-posframe--panel-appearance panel))
+        (theme (etaf-posframe--panel-theme panel))
+        (parent (etaf-posframe--panel-parent-frame panel)))
+    (when (etaf-ref-p appearance)
+      (let ((value
+             (if (etaf-posframe--panel-adopted-p panel)
+                 (let ((bg (and (frame-live-p parent)
+                                (etaf-posframe--color
+                                 (face-attribute 'default :background parent)))))
+                   (if (and bg (etaf-posframe--dark-color-p bg)) 'dark 'light))
+               (plist-get (and (etaf-ref-p theme) (etaf-value theme)) :ui-mode))))
+        (when (and value (not (eq value (etaf-value appearance))))
+          (etaf-batch (setf (etaf-value appearance) value)))))))
+
+(defun etaf-posframe--sync-surface (panel)
+  "Repaint PANEL's chrome from the surface its content declared.
+A panel whose content owns its palette paints its frame, title bar and border
+from that palette and offers that content's modes, so the switch in the title
+bar and the application's own switch remain one state."
+  (let ((theme-ref (etaf-posframe--panel-theme panel))
+        (source (let ((surface (etaf-posframe--panel-surface panel)))
+                  (and surface (etaf-surface-theme surface)))))
+    (when (and (etaf-ref-p theme-ref) source)
+      (let ((palette (etaf-value source))
+            (frame (etaf-posframe--panel-frame panel)))
+        (unless (equal palette (etaf-value theme-ref))
+          (etaf-batch (setf (etaf-value theme-ref) palette)))
+        (when (frame-live-p frame)
+          (ignore-errors (etaf-posframe--set-frame-palette frame palette))
+          (ignore-errors (etaf-posframe--paint-border panel)))
+        (etaf-posframe--update-appearance panel)
+        (etaf-posframe--refresh-header panel (etaf-value theme-ref))))))
+
+(defun etaf-posframe--watch-surface (panel)
+  "Repaint PANEL's chrome whenever its content's surface changes.
+The watcher lives in its own scope, held beside the panel buffer, so it is
+released with the panel and never runs while the View renders."
+  (let* ((buffer (etaf-posframe--panel-buffer panel))
+         (surface (etaf-posframe--panel-surface panel)))
+    (when (and surface (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (let ((scope (etaf-effect-scope :detached t
+                                        :name 'etaf-posframe-surface)))
+          (setq etaf-posframe--surface-scope scope)
+          (etaf-scope-run
+           scope
+           (lambda ()
+             (etaf-watch
+              (lambda ()
+                (let ((theme (etaf-surface-theme surface))
+                      (mode (etaf-surface-mode surface)))
+                  (list (and theme (etaf-value theme))
+                        (and mode (etaf-value mode)))))
+              (lambda (_new _old)
+                (when (buffer-live-p buffer)
+                  (when-let* ((live (buffer-local-value 'etaf-posframe--panel
+                                                        buffer)))
+                    (etaf-posframe--sync-surface live))))
+              :test #'equal
+              :name 'etaf-posframe-surface))))))))
 
 (defun etaf-posframe--apply-theme-to (panel)
   "Derive PANEL's Theme from its parent frame and repaint its title bar.
 A pass that leaves the palette unchanged only re-asserts the frame colours,
-because repainting the View is the expensive part of a theme change."
-  (let ((theme (etaf-posframe--panel-theme panel))
-        (parent-frame (etaf-posframe--panel-parent-frame panel))
-        (options (etaf-posframe--panel-options panel)))
-    (when (and (etaf-ref-p theme) (frame-live-p parent-frame)
-               (memq (plist-get options :theme) '(auto light dark)))
-      (ignore-errors
-        (let* ((mode (plist-get options :theme))
-               (palette (etaf-posframe-theme
-                         parent-frame
-                         (and (not (eq mode 'auto)) mode)))
-               (frame (etaf-posframe--panel-frame panel)))
-          (when (frame-live-p frame)
-            (etaf-posframe--set-frame-palette frame palette))
-          (unless (equal palette (etaf-value theme))
-            (etaf-batch (setf (etaf-value theme) palette))
-            (ignore-errors (etaf-posframe--paint-border panel))
-            (ignore-errors (etaf-posframe--sync-activation)))
-          ;; The title bar repaints in both cases: the palette may be the same
-          ;; while the toggle moved, as `auto' and `light' are in a light frame.
-          (etaf-posframe--refresh-header panel palette))))))
+because repainting the View is the expensive part of a theme change.  A panel
+whose content declared its surface owns the palette already; the pass only
+updates the appearance that content may follow."
+  (if (etaf-posframe--panel-adopted-p panel)
+      (ignore-errors (etaf-posframe--update-appearance panel))
+    (let ((theme (etaf-posframe--panel-theme panel))
+          (parent-frame (etaf-posframe--panel-parent-frame panel))
+          (options (etaf-posframe--panel-options panel)))
+      (when (and (etaf-ref-p theme) (frame-live-p parent-frame)
+                 (memq (plist-get options :theme) '(auto light dark)))
+        (ignore-errors
+          (let* ((mode (plist-get options :theme))
+                 (palette (etaf-posframe-theme
+                           parent-frame
+                           (and (not (eq mode 'auto)) mode)))
+                 (frame (etaf-posframe--panel-frame panel)))
+            (when (frame-live-p frame)
+              (etaf-posframe--set-frame-palette frame palette))
+            (unless (equal palette (etaf-value theme))
+              (etaf-batch (setf (etaf-value theme) palette))
+              (ignore-errors (etaf-posframe--paint-border panel))
+              (ignore-errors (etaf-posframe--sync-activation)))
+            (etaf-posframe--update-appearance panel)
+            ;; The title bar repaints in both cases: the palette may be the same
+            ;; while the toggle moved, as `auto' and `light' are in a light frame.
+            (etaf-posframe--refresh-header panel palette)))))))
 
 (defun etaf-posframe--apply-theme ()
   "Derive every live panel's Theme once from its parent frame."
@@ -1514,17 +1644,23 @@ because repainting the View is the expensive part of a theme change."
     (etaf-posframe--apply-theme-to panel)))
 
 (defun etaf-posframe--choose-theme-mode (mode)
-  "Keep the current panel on MODE for the rest of its life.
-The title bar's toggle changes this panel's `:theme' option and repaints it;
-the caller's configuration is never written, so the choice lasts only as long
-as the panel."
+  "Switch the current panel to MODE.
+A panel whose content declared its surface writes that content's mode cell, so
+the application repaints and the title bar follows one state.  Every other
+panel keeps the choice in its own `:theme' option for the rest of its life;
+the caller's configuration is never written either way."
   (let ((panel (etaf-posframe--current-panel)))
-    (when (and (memq mode '(light auto dark))
-               (etaf-posframe-live-p panel))
-      (setf (etaf-posframe--panel-options panel)
-            (plist-put (copy-sequence (etaf-posframe--panel-options panel))
-                       :theme mode))
-      (etaf-posframe--apply-theme-to panel))))
+    (when (etaf-posframe-live-p panel)
+      (let* ((surface (etaf-posframe--panel-surface panel))
+             (mode-ref (and surface (etaf-surface-mode surface))))
+        (cond
+         ((and mode-ref (assq mode (etaf-surface-modes surface)))
+          (etaf-set-value mode-ref mode))
+         ((memq mode '(light auto dark))
+          (setf (etaf-posframe--panel-options panel)
+                (plist-put (copy-sequence (etaf-posframe--panel-options panel))
+                           :theme mode))
+          (etaf-posframe--apply-theme-to panel)))))))
 
 (defun etaf-posframe--theme-changed (&rest _)
   "Coalesce a theme switch into one pass after the current command.
@@ -1612,6 +1748,11 @@ described in the package Commentary."
          (theme-ref (if (or (etaf-ref-p theme) (etaf-computed-p theme))
                         theme
                       (etaf-ref theme)))
+         ;; The slot an application that owns its palette declares itself on,
+         ;; and the appearance a panel gives the View it frames.  Both outlive
+         ;; the mount, so the panel keeps one readable state on each side.
+         (surface (etaf-surface-create))
+         (appearance (etaf-ref (plist-get (etaf-value theme-ref) :ui-mode)))
          (resolved (if (functionp view) (funcall view) view))
          (options (plist-put (plist-put options :width columns) :height max-height))
          (options (plist-put options :pixel-width (* columns char-width)))
@@ -1641,6 +1782,8 @@ described in the package Commentary."
                       (lambda ()
                         (etaf-view
                          (etaf-posframe--surface :theme theme-ref
+                                                 :appearance appearance
+                                                 :surface surface
                                                  :content (lambda () resolved))))
                       (list :viewport-width (* columns char-width)
                             :viewport-height max-height))
@@ -1648,15 +1791,21 @@ described in the package Commentary."
             (unless runtime
               (signal 'etaf-posframe-error
                       (list "Panel View did not mount" view)))
-            ;; The Theme ref lives beside the panel buffer: the panel struct
-            ;; stays printable, and the frame arguments read the same ref.
+            ;; The Theme ref and the surface live beside the panel buffer: the
+            ;; panel struct stays printable, and the frame arguments read the
+            ;; same ref.
             (with-current-buffer buffer
-              (setq etaf-posframe--theme-ref theme-ref))
+              (setq etaf-posframe--theme-ref theme-ref
+                    etaf-posframe--surface surface
+                    etaf-posframe--appearance-ref appearance))
             (setq panel (etaf-posframe--make-panel
                          :buffer buffer
                          :options options
                          :parent parent-buffer
                          :parent-frame parent-frame))
+            ;; An application that declared its surface paints the frame this
+            ;; panel is about to show, so the first paint is already its own.
+            (etaf-posframe--sync-surface panel)
             (setf (etaf-posframe--panel-frame panel)
                   (etaf-posframe--show-frame
                    panel (max 1 (etaf-posframe--lines buffer))))
@@ -1667,6 +1816,7 @@ described in the package Commentary."
              (etaf-posframe--panel-frame panel) (etaf-value theme-ref))
             (ignore-errors (etaf-posframe--paint-border panel))
             (ignore-errors (etaf-posframe--sync-activation))
+            (etaf-posframe--watch-surface panel)
             (with-current-buffer buffer
               (setq etaf-posframe--panel panel))
             (with-current-buffer parent-buffer
@@ -1733,18 +1883,10 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
                                          :pixel-width width)
                                :width (max 1 (round (/ width (float char)))))
             resized t)
-      (when-let* ((text (plist-get adopted :title))
-                  (theme-ref (etaf-posframe--panel-theme panel))
-                  (theme (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
-                  (buffer (etaf-posframe--panel-buffer panel)))
-        (when (buffer-live-p buffer)
-          (with-current-buffer buffer
-            (setq-local header-line-format
-                        (etaf-posframe--header-format
-                         text theme (plist-get adopted :width)
-                         (and (memq (plist-get adopted :theme)
-                                    '(light auto dark))
-                              (plist-get adopted :theme))))))))
+      (let ((theme-ref (etaf-posframe--panel-theme panel)))
+        (when (and (plist-get adopted :title) (etaf-ref-p theme-ref))
+          (etaf-posframe--refresh-header
+           panel (etaf-value theme-ref) (plist-get adopted :width)))))
     ;; A resize away from the row budget is the new budget: taller always, and
     ;; shorter only when it cuts into the content.  The panel's own fit sets
     ;; the frame to the content height, which must not shrink the budget.

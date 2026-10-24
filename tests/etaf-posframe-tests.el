@@ -1110,5 +1110,103 @@ segment takes no pointer-hover face, so its label stays readable."
       (dolist (theme enabled)
         (ignore-errors (load-theme theme t))))))
 
+(defconst etaf-posframe-tests--app-palettes
+  `((day . ,(etaf-ui-theme-tokens '(:bg "#FFFFFF" :fg "#1B2027"
+                                    :panel "#F4F6FA" :border "#DDE2EA"
+                                    :muted "#5C6470" :accent "#2F6FE4"
+                                    :accent-fg "#FFFFFF")))
+    (night . ,(etaf-ui-theme-tokens '(:bg "#0D1014" :fg "#DDE3EC"
+                                      :panel "#12151A" :border "#262B33"
+                                      :muted "#8A94A3" :accent "#6CB6FF"
+                                      :accent-fg "#101418"))))
+  "Palettes the test application owns, keyed by its own mode.")
+
+(defvar etaf-posframe-tests--surface-mode nil
+  "Mode cell of the test application while a case runs.")
+
+(defvar etaf-posframe-tests--surface-theme nil
+  "Palette cell of the test application while a case runs.")
+
+(etaf-define-component etaf-posframe-tests-surface-app ()
+  "Declare an application palette and switch on its own mode cell.
+The palette follows the mode cell, the way an application that owns its
+palette repaints."
+  :setup (progn
+           (etaf-watch
+            (lambda () (etaf-value etaf-posframe-tests--surface-mode))
+            (lambda (new _old)
+              (etaf-set-value etaf-posframe-tests--surface-theme
+                              (alist-get new etaf-posframe-tests--app-palettes)))
+            :immediate t)
+           (when-let* ((surface (etaf-surface-host)))
+             (etaf-surface-declare surface
+                                   :theme etaf-posframe-tests--surface-theme
+                                   :mode etaf-posframe-tests--surface-mode
+                                   :modes '((day . "晨") (night . "夜")))))
+  :view (text (expr (format "app:%s"
+                            (etaf-value etaf-posframe-tests--surface-mode)))))
+
+(ert-deftest etaf-posframe-title-bar-and-the-application-share-one-theme-state ()
+  "A panel paints what its content declares, and both switches write one cell.
+The application's own toggle repaints the panel, and a click on the panel's
+title bar switches the application; the palette and the mode are one state,
+not one per surface."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (mode (etaf-ref 'night))
+         (theme (etaf-ref (alist-get 'night etaf-posframe-tests--app-palettes)))
+         (etaf-posframe-tests--surface-mode mode)
+         (etaf-posframe-tests--surface-theme theme)
+         (panel (etaf-posframe-show
+                 (etaf-view (etaf-posframe-tests-surface-app))
+                 :key 'surface-app :width 36 :height 2 :title "APP" :theme 'auto))
+         (frame (etaf-posframe-panel-frame panel)))
+    (unwind-protect
+        (let ((buffer (etaf-posframe-tests--panel-buffer frame)))
+          ;; The frame paints the application's palette, not one derived from
+          ;; the Emacs theme.
+          (should (equal (frame-parameter frame 'background-color)
+                         (plist-get (alist-get 'night
+                                               etaf-posframe-tests--app-palettes)
+                                    :ui-panel-bg)))
+          ;; The title bar offers the application's modes and selects its mode.
+          (let* ((header (with-current-buffer buffer header-line-format))
+                 (day (etaf-posframe-tests--header-segment header "晨"))
+                 (night (etaf-posframe-tests--header-segment header "夜")))
+            (should day)
+            (should night)
+            (should-not (get-text-property night 'mouse-face header))
+            ;; The application's own switch repaints the panel around it.
+            (etaf-set-value mode 'day)
+            (should (equal (frame-parameter frame 'background-color)
+                           (plist-get (alist-get 'day
+                                                 etaf-posframe-tests--app-palettes)
+                                      :ui-panel-bg)))
+            (should (string-match-p
+                     "app:day"
+                     (with-current-buffer buffer
+                       (buffer-substring-no-properties (point-min) (point-max)))))
+            (setq header (with-current-buffer buffer header-line-format))
+            (let ((command (lookup-key (get-text-property
+                                        (etaf-posframe-tests--header-segment
+                                         header "夜")
+                                        'keymap header)
+                                       [header-line mouse-1])))
+              (should command)
+              ;; A click on the title bar writes the application's own cell.
+              (call-interactively command)
+              (should (eq 'night (etaf-value mode)))
+              (should (equal (frame-parameter frame 'background-color)
+                             (plist-get (alist-get 'night
+                                                   etaf-posframe-tests--app-palettes)
+                                        :ui-panel-bg)))
+              (should (string-match-p
+                       "app:night"
+                       (with-current-buffer buffer
+                         (buffer-substring-no-properties
+                          (point-min) (point-max))))))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here
