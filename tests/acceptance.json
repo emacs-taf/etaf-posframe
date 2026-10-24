@@ -189,6 +189,11 @@
    "name": "etaf-posframe-hover-paints-a-border-without-focus",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A pointer over a panel paints its border in the hover colour while the keyboard stays where it was, and leaving restores it."
+  },
+  {
+   "name": "etaf-posframe-click-selects-a-panel",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A mouse button anywhere in a panel raises it and gives it the keyboard, while a passive panel never takes the focus from a click."
   }
  ]
 }

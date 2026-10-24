@@ -58,7 +58,9 @@
 ;;   :draggable  Move the panel by dragging HEADER.  Defaults to `:pinned'.
 ;;   :pinned     Keep the panel open regardless of `:dismiss'.  Default nil.
 ;;   :focusable  Let the panel take keyboard focus, so its View `:keys', text
-;;               inputs and buttons receive input.  Default nil.
+;;               inputs and buttons receive input.  Default nil.  Clicking any
+;;               part of a panel also raises it above the other panels, whether
+;;               or not it takes the keyboard.
 ;;   :auto-focus Default `:focusable'.  Select the panel on open so its keys
 ;;               work without a click; nil leaves it unfocused until clicked.
 ;;   :dismiss    'auto (default) hides before the next command outside the
@@ -1109,12 +1111,37 @@ while another application is in front."
               (when (frame-parameter frame 'visibility)
                 (make-frame-invisible frame)))))))))
 
+(defun etaf-posframe--raise-clicked-panel ()
+  "Bring the panel a mouse button was pressed in to the front.
+Emacs selects the clicked child frame but leaves the stacking order alone, so a
+panel behind another stayed covered even while it held the keyboard.  Clicking
+any part of a window is expected to raise it, so the click itself does that;
+the keyboard only moves when the panel accepts it."
+  (ignore-errors
+    (let* ((event last-command-event)
+           (position (and (consp event)
+                          (memq (event-basic-type event)
+                                '(mouse-1 mouse-2 mouse-3))
+                          (event-start event)))
+           (window (and position (posn-window position)))
+           (frame (cond ((window-live-p window) (window-frame window))
+                        ((frame-live-p window) window)))
+           (panel (and frame (etaf-posframe--panel-for-frame frame))))
+      (when panel
+        (raise-frame frame)
+        (when (and (window-live-p window)
+                   (plist-get (etaf-posframe--panel-options panel) :focusable)
+                   (not (eq (selected-frame) frame)))
+          (select-window window)
+          (setf (etaf-posframe--panel-focused panel) t))))))
+
 (defun etaf-posframe--follow-focus ()
   "Follow the pointer and the selection for the panel borders.
 The panel under the pointer gets the hover border without taking the keyboard;
 the keyboard moves only on a click, or on hover when
 `etaf-posframe-focus-follows-mouse' asks for it."
   (etaf-posframe--refresh-hover)
+  (etaf-posframe--raise-clicked-panel)
   (when etaf-posframe-focus-follows-mouse
     (etaf-posframe--focus-pointer-panel))
   (etaf-posframe--sync-activation)

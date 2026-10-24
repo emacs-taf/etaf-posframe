@@ -11,6 +11,10 @@
   which reports a child frame; a 0.2 s reading while panels exist clears the
   hint when the pointer leaves, because a pointer leaving a buffer runs no
   command.
+- A click anywhere in a panel raises it above the other panels.  Emacs selects
+the clicked child frame but leaves the stacking order alone, so a panel behind
+another stayed covered even while it held the keyboard; only an explicit raise
+puts it in front.
 - `etaf-posframe-focus-follows-mouse` focuses the panel under the pointer.  It
   defaults to nil, so a resting pointer does not move the keyboard away from
   another window.

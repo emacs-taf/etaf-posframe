@@ -761,5 +761,38 @@ would offer the panel as a target instead of the application behind it."
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
+(ert-deftest etaf-posframe-click-selects-a-panel ()
+  "A mouse button anywhere in a panel selects it, and never a passive panel."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "click"))
+                                    :key 'click-panel :width 24 :height 2
+                                    :pinned t :focusable t))
+         (frame (etaf-posframe-panel-frame panel))
+         (window (frame-root-window frame))
+         (passive (etaf-posframe-show (etaf-view (text "passive"))
+                                      :key 'click-passive :width 24 :height 2
+                                      :pinned t :focusable nil))
+         (passive-window (frame-root-window
+                          (etaf-posframe-panel-frame passive))))
+    (unwind-protect
+        (progn
+          (select-frame origin)
+          ;; The click command has already run; the hook raises the clicked
+          ;; panel and gives it the keyboard like a click on any window.
+          (let ((last-command-event
+                 (list 'mouse-1 (list window 1 '(1 . 1) 0))))
+            (run-hooks 'post-command-hook))
+          (should (eq (selected-frame) frame))
+          ;; A passive panel is raised but never takes the keyboard.
+          (select-frame origin)
+          (let ((last-command-event
+                 (list 'mouse-1 (list passive-window 1 '(1 . 1) 0))))
+            (run-hooks 'post-command-hook))
+          (should (eq (selected-frame) origin)))
+      (ignore-errors (etaf-posframe-hide panel))
+      (ignore-errors (etaf-posframe-hide passive))
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here
