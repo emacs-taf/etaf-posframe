@@ -29,6 +29,13 @@
 
 ### Fixed
 
+- A panel pinned with `:theme light` or `dark` now starts a content that owns
+  its palette in that mode.  The pin used to reach only the panel's own frame
+  and title bar, so an application such as the NetEase player kept painting its
+  own default palette inside a light panel; the panel now writes its pinned
+  mode into the content's mode cell once, and the content's own switch decides
+  after that.
+
 - A stacked panel now takes the row below the panel above it instead of
   stepping down by its own height, so panels of different heights close up
   instead of leaving a hole as tall as the difference between them.

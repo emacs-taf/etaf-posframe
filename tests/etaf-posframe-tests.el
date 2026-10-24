@@ -10,6 +10,14 @@
 
 ;;; Code:
 
+;;; Frame measurements
+
+;; Frame measurements and `set-frame-size' accept a frame, never a window.
+;; A window argument signals `Wrong type argument: framep, #<window N>'
+;; without naming the call site, so the backtrace rarely helps.  Reach a
+;; frame with `(window-frame window)' or, for these panels, with the
+;; `etaf-posframe-test--window' helper in this file.
+
 (require 'ert)
 (require 'seq)
 (require 'etaf-posframe)
@@ -122,6 +130,60 @@
          (char-w (frame-char-width frame)))
     (cons (round (/ (frame-pixel-height frame) (float char-h)))
           (round (/ (frame-pixel-width frame) (float char-w))))))
+
+(etaf-define-component etaf-posframe-test--surface-app (&key session)
+  "Declare SESSION's palette and mode on the host surface, like a real app."
+  :bindings ((palette (plist-get session :palette))
+             (mode (plist-get session :mode)))
+  :setup (when-let* ((surface (etaf-surface-host)))
+           (etaf-surface-declare surface
+                                 :theme palette
+                                 :mode mode
+                                 :modes '((light . "亮") (auto . "随") (dark . "暗"))))
+  :render (etaf-view (text (expr (format "app:%s" (etaf-value mode))))))
+
+(defun etaf-posframe-test--surface-session ()
+  "Return a session for an application that owns its palette and mode."
+  (list :palette (etaf-ref (etaf-posframe-theme nil 'dark))
+        :mode (etaf-ref 'auto)))
+
+(ert-deftest etaf-posframe-pinned-theme-reaches-the-content ()
+  "A pinned `:theme' starts the content in that mode, once.
+A panel whose content owns its palette used to paint a light title bar over a
+content that stayed in its own dark default, because the pin never reached the
+content's mode cell."
+  (skip-unless (display-graphic-p))
+  (let* ((session (etaf-posframe-test--surface-session))
+         (mode (plist-get session :mode))
+         (palette (plist-get session :palette))
+         (panel (etaf-posframe-show
+                 (etaf-view (etaf-posframe-test--surface-app :session session))
+                 :key 'pinned-light :width 24 :height 6 :theme 'light
+                 :at 'frame-top-right)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.3)
+          (should (eq 'light (etaf-value mode)))
+          ;; The content's own switch afterwards is authoritative: a later
+          ;; surface pass must not push the pin back over the user's choice.
+          (etaf-set-value mode 'dark)
+          (etaf-posframe-test--settle 0.2)
+          (etaf-set-value palette (append (etaf-value palette) '(:ui-note test)))
+          (etaf-posframe-test--settle 0.3)
+          (should (eq 'dark (etaf-value mode))))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel))))
+  ;; An `auto' panel leaves the content's mode alone.
+  (let* ((session (etaf-posframe-test--surface-session))
+         (mode (plist-get session :mode))
+         (panel (etaf-posframe-show
+                 (etaf-view (etaf-posframe-test--surface-app :session session))
+                 :key 'pin-auto :width 24 :height 6 :theme 'auto
+                 :at 'frame-top-right)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.3)
+          (should (eq 'auto (etaf-value mode))))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
 
 (ert-deftest etaf-posframe-resize-follows-an-outside-resize-by-default ()
   "A panel adopts a frame resized from outside, which is the default."

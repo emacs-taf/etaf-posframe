@@ -429,7 +429,8 @@ They close the panel without consulting the View.")
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
   buffer frame parent parent-frame options timer restore-frame focused
-  fit-timer settled fit-window fit-count fit-muted-until close-callback size)
+  fit-timer settled fit-window fit-count fit-muted-until close-callback size
+  pin-applied)
 
 ;; A panel is returned to callers, so it must print: the Runtime and the Theme
 ;; ref are cyclic (refs, keymaps, closures), and `prin1' on them loops until
@@ -1608,14 +1609,32 @@ panel passes the polarity of its own palette."
         (when (and value (not (eq value (etaf-value appearance))))
           (etaf-batch (setf (etaf-value appearance) value)))))))
 
+(defun etaf-posframe--apply-pinned-mode (panel surface)
+  "Start SURFACE's content in PANEL's pinned mode, once.
+The caller asked for that mode with `:theme' when it showed the panel, so a
+content that owns its palette starts in it instead of in whatever its own
+default is.  The mode cell then belongs to the content: the title-bar switch
+writes it, and this function never overrides the choice again."
+  (when (and surface (not (etaf-posframe--panel-pin-applied panel)))
+    (let* ((options (etaf-posframe--panel-options panel))
+           (pinned (plist-get options :theme))
+           (modes (etaf-surface-modes surface))
+           (mode-ref (etaf-surface-mode surface)))
+      (when (and mode-ref (memq pinned '(light dark)) (assq pinned modes))
+        (setf (etaf-posframe--panel-pin-applied panel) t)
+        (unless (eq (etaf-value mode-ref) pinned)
+          (etaf-set-value mode-ref pinned))))))
+
 (defun etaf-posframe--sync-surface (panel)
   "Repaint PANEL's chrome from the surface its content declared.
 A panel whose content owns its palette paints its frame, title bar and border
 from that palette and offers that content's modes, so the switch in the title
 bar and the application's own switch remain one state."
   (let ((theme-ref (etaf-posframe--panel-theme panel))
+        (surface (etaf-posframe--panel-surface panel))
         (source (let ((surface (etaf-posframe--panel-surface panel)))
                   (and surface (etaf-surface-theme surface)))))
+    (etaf-posframe--apply-pinned-mode panel surface)
     (when (and (etaf-ref-p theme-ref) source)
       (let ((palette (etaf-value source))
             (frame (etaf-posframe--panel-frame panel)))

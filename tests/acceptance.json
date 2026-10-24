@@ -42,6 +42,11 @@
    "purpose": "A second show for the same buffer replaces the earlier panel instead of stacking two."
   },
   {
+   "name": "etaf-posframe-pinned-theme-reaches-the-content",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A pinned :theme starts a content that owns its palette in that mode, and the content's later choice is not overridden."
+  },
+  {
    "name": "etaf-posframe-resize-follows-an-outside-resize-by-default",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A panel adopts a frame the user or a caller resized, which is what :resizable t means."
