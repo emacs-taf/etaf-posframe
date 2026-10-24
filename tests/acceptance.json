@@ -219,6 +219,11 @@
    "name": "etaf-posframe-keep-alive-resumes-the-session",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A :keep-alive app hides and resumes the same session, and quitting calls :on-stop once."
+  },
+  {
+   "name": "etaf-posframe-pointer-leaving-keeps-the-focus-border",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Moving the pointer off a focused panel keeps the panel selected and its focused border."
   }
  ]
 }

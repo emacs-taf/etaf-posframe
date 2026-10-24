@@ -925,5 +925,26 @@ would offer the panel as a target instead of the application behind it."
       (setq etaf-posframe-apps saved-apps
             etaf-posframe-app-map saved-map))))
 
+(ert-deftest etaf-posframe-pointer-leaving-keeps-the-focus-border ()
+  "Moving the pointer off a focused panel keeps its focused border."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "stay"))
+                                    :key 'stay :width 20 :height 2
+                                    :focusable t :focus-on-open t))
+         (frame (etaf-posframe-panel-frame panel)))
+    (unwind-protect
+        (progn
+          (should (eq (selected-frame) frame))
+          (let ((accent (face-attribute 'child-frame-border :background frame)))
+            (etaf-posframe-tests--with-pointer-on
+             origin (lambda () (run-hooks 'post-command-hook)))
+            (should (eq (selected-frame) frame))
+            (should (equal accent
+                           (face-attribute 'child-frame-border :background
+                                           frame)))))
+      (etaf-posframe-hide panel)
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here
