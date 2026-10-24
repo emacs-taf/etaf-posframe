@@ -4,6 +4,13 @@
 
 ### Added
 
+- `:resizable` decides which outside size changes a panel accepts: `t`
+  (default) keeps today's behaviour and follows any edge, `nil` returns the
+  frame to the size the panel had, and a list such as `'(left right bottom)`
+  accepts only the axes whose edges it names.  The panel's own fit to its
+  content is not an outside resize, so a `nil` panel still shrinks to short
+  content and `:fill-height` still holds the row budget.
+
 - A panel whose content declares its surface with `etaf-surface-declare`
   paints its frame, title bar and border from that content's Theme, and its
   title bar offers the content's modes with the content's current mode

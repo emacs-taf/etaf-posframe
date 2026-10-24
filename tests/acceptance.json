@@ -42,6 +42,21 @@
    "purpose": "A second show for the same buffer replaces the earlier panel instead of stacking two."
   },
   {
+   "name": "etaf-posframe-resize-follows-an-outside-resize-by-default",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A panel adopts a frame the user or a caller resized, which is what :resizable t means."
+  },
+  {
+   "name": "etaf-posframe-resizable-nil-refuses-an-outside-resize",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "`:resizable nil' puts the frame back to the size the panel allows after an outside resize."
+  },
+  {
+   "name": "etaf-posframe-resizable-list-limits-the-axes",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A :resizable side list accepts the axes it names and restores the others."
+  },
+  {
    "name": "etaf-posframe-timeout-closes-the-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A panel with :timeout hides by itself and releases its Runtime."

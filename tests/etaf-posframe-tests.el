@@ -41,6 +41,16 @@
              "theme"
              (error-message-string
               (should-error (etaf-posframe-show view :theme 'sepia)
+                            :type 'etaf-posframe-error))))
+    (should (string-match-p
+             "resizable"
+             (error-message-string
+              (should-error (etaf-posframe-show view :resizable 'sideways)
+                            :type 'etaf-posframe-error))))
+    (should (string-match-p
+             "resizable"
+             (error-message-string
+              (should-error (etaf-posframe-show view :resizable '(left middle))
                             :type 'etaf-posframe-error))))))
 
 (ert-deftest etaf-posframe-theme-returns-frame-colors ()
@@ -93,6 +103,135 @@
             (should-not (etaf-posframe-live-p first))
             (should (etaf-posframe-live-p second))))
       (mapc #'etaf-posframe-hide (etaf-posframe-panels)))))
+
+(defun etaf-posframe-test--settle (seconds)
+  "Let the panel render and finish its deferred fit for SECONDS."
+  (sit-for seconds)
+  (sit-for seconds))
+
+(defun etaf-posframe-test--window (panel)
+  "Return PANEL's frame window, or nil when the panel is not live."
+  (let ((frame (etaf-posframe-panel-frame panel)))
+    (and (window-live-p (and frame (frame-root-window frame)))
+         (frame-root-window frame))))
+
+(defun etaf-posframe-test--frame-size (panel)
+  "Return PANEL's frame as (ROWS COLUMNS), title row included."
+  (let* ((frame (etaf-posframe-panel-frame panel))
+         (char-h (frame-char-height frame))
+         (char-w (frame-char-width frame)))
+    (cons (round (/ (frame-pixel-height frame) (float char-h)))
+          (round (/ (frame-pixel-width frame) (float char-w))))))
+
+(ert-deftest etaf-posframe-resize-follows-an-outside-resize-by-default ()
+  "A panel adopts a frame resized from outside, which is the default."
+  (skip-unless (display-graphic-p))
+  (let* ((panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'resize-default :width 24 :height 8
+                                    :at 'frame-top-right))
+         (window nil)
+         (body nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (setq window (etaf-posframe-test--window panel)
+                body (window-body-width window t))
+          (set-frame-size (etaf-posframe-panel-frame panel)
+                          (+ body (* 10 (frame-char-width (window-frame window))))
+                          (window-pixel-height window) t)
+          (etaf-posframe-test--settle 0.25)
+          (should (>= (- (window-body-width
+                          (etaf-posframe-test--window panel) t)
+                         body)
+                      (* 9 (frame-char-width (window-frame window))))))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
+
+(ert-deftest etaf-posframe-resizable-nil-refuses-an-outside-resize ()
+  "`:resizable nil' puts the frame back after an outside resize."
+  (skip-unless (display-graphic-p))
+  (let* ((panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'resize-none :width 24 :height 8
+                                    :resizable nil :at 'frame-top-right))
+         (window nil)
+         (body nil)
+         (rows nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (setq window (etaf-posframe-test--window panel)
+                body (window-body-width window t)
+                rows (window-pixel-height window))
+          (set-frame-size (etaf-posframe-panel-frame panel)
+                          (+ body (* 10 (frame-char-width (window-frame window))))
+                          (+ rows (* 3 (frame-char-height (window-frame window)))) t)
+          (etaf-posframe-test--settle 0.3)
+          (let ((settled (etaf-posframe-test--window panel)))
+            (should (= body (window-body-width settled t)))
+            (should (= rows (window-pixel-height settled)))))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
+
+(ert-deftest etaf-posframe-resizable-list-limits-the-axes ()
+  "A side list allows the axes it names and restores the others."
+  (skip-unless (display-graphic-p))
+  (let* ((panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'resize-width :width 24 :height 8
+                                    :fill-height t
+                                    :resizable '(right) :at 'frame-top-right))
+         (window nil)
+         (body nil)
+         (rows nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (setq window (etaf-posframe-test--window panel)
+                body (window-body-width window t)
+                rows (window-pixel-height window))
+          ;; a height change is refused: `top' and `bottom' are not listed
+          (set-frame-size (window-frame window) body
+                          (+ rows (* 12 (frame-char-height (window-frame window))))
+                          t)
+          (etaf-posframe-test--settle 0.3)
+          (should (= rows (window-pixel-height
+                           (etaf-posframe-test--window panel))))
+          ;; a width change is accepted: `right' is listed
+          (set-frame-size (window-frame window)
+                          (+ body (* 10 (frame-char-width (window-frame window))))
+                          rows t)
+          (etaf-posframe-test--settle 0.3)
+          (should (>= (window-body-width
+                       (etaf-posframe-test--window panel) t)
+                      (+ body (* 9 (frame-char-width (window-frame window)))))))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel))))
+  (let* ((panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'resize-height :width 24 :height 8
+                                    :fill-height t
+                                    :resizable '(top bottom) :at 'frame-top-right))
+         (window nil)
+         (body nil)
+         (rows nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (setq window (etaf-posframe-test--window panel)
+                body (window-body-width window t)
+                rows (window-pixel-height window))
+          ;; a width change is refused: neither `left' nor `right' is listed
+          (set-frame-size (window-frame window)
+                          (+ body (* 10 (frame-char-width (window-frame window))))
+                          rows t)
+          (etaf-posframe-test--settle 0.3)
+          (should (= body (window-body-width
+                           (etaf-posframe-test--window panel)
+                           t)))
+          ;; a height change past the row budget is accepted
+          (set-frame-size (window-frame window) body
+                          (+ rows (* 12 (frame-char-height (window-frame window))))
+                          t)
+          (etaf-posframe-test--settle 0.3)
+          (should (>= (window-pixel-height
+                       (etaf-posframe-test--window panel))
+                      (+ rows (* 9 (frame-char-height (window-frame window)))))))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
 
 (ert-deftest etaf-posframe-timeout-closes-the-panel ()
   "A panel with :auto-hide seconds hides by itself."
