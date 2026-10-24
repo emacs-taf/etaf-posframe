@@ -18,11 +18,10 @@
 ;; rendered content and owns the panel lifecycle.  Graphical frames only.
 ;;
 ;; Panels are independent: each has its own frame, Runtime and behaviour, and
-;; several may be open at once.  A panel is passive by default: it does not take keyboard focus, it hides
-;; before the next command outside the panel, and it never changes the selected
-;; buffer.  `:focusable' gives it keyboard input, `:pinned' keeps it open until
-;; it is closed explicitly and `:draggable' moves it by dragging its header
-;; line.  Several panels may be open at the same time.
+;; several may be open at once.  A panel never changes the selected buffer; with
+;; `:focusable' it can take the keyboard.  It stays until it is closed unless
+;; `:auto-hide' asks it to hide when the user works elsewhere.  A click anywhere
+;; in a panel raises it above the other panels.
 ;;
 ;; Load this package with (require 'etaf-posframe) after adding this repository,
 ;; ETAF and Posframe roots to `load-path'.  Only the interfaces listed below are
@@ -36,67 +35,48 @@
 ;; receives its own Runtime.  The panel follows the current buffer at call time.
 ;; OPTIONS is a plist:
 ;;
-;;   :at         Placement, default 'point.  `frame-PLACE' puts the panel
-;;               inside the parent frame and `window-PLACE' inside the current
-;;               window's text area, where PLACE is one of top-left,
-;;               top-center, top-right, center-left, center, center-right,
-;;               bottom-left, bottom-center, bottom-right.  `point' and
-;;               `point-top' follow point; a cons (X . Y) is frame pixels and
-;;               a function is a posframe poshandler.
-;;   :cell       (ROW . COLUMN) in character cells, counted from zero at the
-;;               top left of the current window's text area.  Takes precedence
-;;               over `:at'.
-;;   :width      Content columns, default `etaf-posframe-default-width' and
-;;               clamped to the parent frame.  Resizing the panel's frame
-;;               from outside sets the width instead, and the View re-lays
-;;               out at it.
-;;   :height     Row budget: content lines the View lays out for, default
-;;               `etaf-posframe-default-max-height'.  Taller content clips, and
-;;               a frame resized from outside sets the budget instead.
-;;   :header     Header line text.  Without it the panel has no header line and
-;;               cannot be dragged.
-;;   :draggable  Move the panel by dragging HEADER.  Defaults to `:pinned'.
-;;   :pinned     Keep the panel open regardless of `:dismiss'.  Default nil.
-;;   :focusable  Let the panel take keyboard focus, so its View `:keys', text
-;;               inputs and buttons receive input.  Default nil.  Clicking any
-;;               part of a panel also raises it above the other panels, whether
-;;               or not it takes the keyboard.
-;;   :auto-focus Default `:focusable'.  Select the panel on open so its keys
-;;               work without a click; nil leaves it unfocused until clicked.
-;;   :dismiss    'auto (default) hides before the next command outside the
-;;               panel; 'focus-out hides when the panel loses focus; nil keeps
-;;               it until `etaf-posframe-hide'.
-;;   :timeout    Seconds after which the panel hides by itself.
-;;   :theme      ETAF UI Theme plist; defaults to `etaf-posframe-theme' for the
-;;               current frame, so catalog Components match the user's frame.
-;;   :theme-mode 'auto (default), `light' or `dark'.  `auto' follows the Emacs
-;;               theme; light and dark pin the panel to that palette whoever
-;;               the Emacs theme is, which is what a board with fixed colours
-;;               asks for.  Ignored when `:theme' is given.
-;;   :border-width  Border around the frame in pixels, default
-;;               `etaf-posframe-border-width' (1); 0 draws none.
-;;   :border-color  Border colour, default the Theme's panel border, so the
-;;               panel reads as a surface floating above the buffer.
-;;   :focus-border-color  Border colour while the panel holds the keyboard;
-;;               default the Theme's accent.
-;;   :hover-border-color  Border colour while the mouse pointer is over the
-;;               panel; default the focus colour at 45% over the panel surface,
-;;               so hovering hints and clicking commits.
-;;   :offset     (ROWS . COLUMNS) character cells to shift whatever `:at' or
-;;               `:cell' chose, so a panel can start from an anchor and move.
-;;               Negative rows go up, negative columns go left.  A function is
-;;               called for the pair, which lets a caller compute it.
-;;   :fill       Keep the frame at the row budget instead of shrinking to the
+;;   :at         Placement.  An anchor (`frame-top-right', `window-center',
+;;               `point' ...), `(ANCHOR ROWS COLS)' to shift an anchor by
+;;               character cells (negative rows go up and columns left),
+;;               `(cells ROW COL)' for a character cell of the current window,
+;;               `(pixels X . Y)' for frame pixels, or a posframe poshandler.
+;;               Default 'point.
+;;   :stack      With an anchor `:at', keep the panel clear of the live panels
+;;               at that anchor: stack downward from a top or centre anchor and
+;;               upward from a bottom one.  Default nil.
+;;   :width      Content columns, default `etaf-posframe-default-width', or
+;;               `(fraction 0.5)' for half the parent frame's width.  Clamped
+;;               to the parent frame; a frame resized from outside becomes the
+;;               width instead and the View re-lays out at it.
+;;   :height     Row budget, default `etaf-posframe-default-max-height', or
+;;               `(fraction 0.5)' for half the parent frame's height.  Taller
+;;               content clips; a frame resized from outside becomes the budget.
+;;   :fill-height  Keep the frame at the row budget instead of shrinking to the
 ;;               content, so an application with a fixed-size board fills the
-;;               stage it asked for; the surface paints the remaining rows.
-;;   :stack      With an anchor `:at', keep the panel clear of live panels at
-;;               that anchor: stack downward from a top or centre anchor and
-;;               upward from a bottom one, `etaf-posframe--stack-gap' apart.
-;;   :on-close   Function called with the panel after it was hidden.
+;;               stage it asked for.
+;;   :title      Title-bar text.  Without it the panel has no header line and
+;;               cannot be dragged.
+;;   :draggable  Move the panel by dragging its title bar.  Needs `:title'.
+;;   :focusable  Let the panel take the keyboard, so its View's `:keys', text
+;;               inputs and buttons receive input.  Default nil.  Clicking any
+;;               part of a panel raises it above the other panels either way.
+;;   :focus-on-open  Select the panel on open, default `:focusable'.  Nil on a
+;;               focusable panel leaves it unfocused until it is clicked.
+;;   :auto-hide  nil (default) keeps the panel until it is closed; t hides it
+;;               when the user works elsewhere, so a preview disappears as soon
+;;               as the pointer or the keyboard moves on; a number hides it
+;;               after that many seconds.
+;;   :theme      `auto' (default) follows the Emacs theme; `light' or `dark'
+;;               pin the panel to that palette; a Theme plist (or a ref) uses
+;;               that palette as it is.
+;;   :border     Plist `(:width W :color C :focus F :hover H)' for the frame
+;;               border: W pixels 0..19, and the resting, focused and hovered
+;;               colours.  Defaults: `etaf-posframe-border-width', the Theme's
+;;               panel border, its accent, and the accent at 45% over the
+;;               surface.
 ;;   :key        Identity of the panel.  Showing a View with a key that is
-;;               already live replaces that panel; views with different keys,
-;;               or without a key, keep their own frame, Runtime and position,
-;;               so several panels stay open at the same time.
+;;               already live replaces that panel; different keys keep their
+;;               own frame, Runtime and position.
 ;;
 ;; Signal `etaf-posframe-error' for an unknown option, an invalid anchor or a
 ;; non-graphical frame.  A failed show unmounts the View and deletes the frame
@@ -132,26 +112,27 @@
 ;; call instead of writing their own command.  ID is a symbol naming the
 ;; application.  OPTIONS is a plist:
 ;;
-;;   :title      Human name, used as the header when `:header' is absent.
+;;   :title      Human name; it is the panel's title-bar text.
+;;   :shortcut   Key string that `etaf-posframe-app-prefix' binds to this app.
 ;;   :create     Function returning a fresh session for the application.
 ;;   :view       Function taking that session and returning its View.
-;;   :width      Columns; default `etaf-posframe-default-width'.
-;;   :height     Row budget; default `etaf-posframe-default-max-height'.
-;;   :at         Placement, default 'frame-top-right.
-;;   :stack      Stack below the panels already there, default t.
-;;   :header     Header text; default `:title'.
-;;   :focusable  Give the panel the keyboard, default t.
-;;   :theme-mode 'auto (default), `light' or `dark'; the registered app keeps
-;;               that palette when the Emacs theme changes.
-;;   :key        A key string that `etaf-posframe-app-map' binds to this app.
-;;   :fill       Keep the frame at `:height' rows instead of shrinking to the
-;;               content, which is what a game board wants.
-;;   :require    Feature to load before creating a session, when the package is
-;;               not loaded yet.
+;;   :require    Feature to load before creating a session.
+;;   :keep-alive t hides the panel on close and keeps the session for the next
+;;               open, so music or a game continues; nil (default) stops the
+;;               application.  `etaf-posframe-app-quit' stops it either way.
+;;   :on-stop    Function called with the session when the application stops.
+;;   :width, :height, :at, :stack, :focusable, :focus-on-open, :auto-hide,
+;;   :theme, :border, :draggable
+;;               Same meaning as in `etaf-posframe-show'.  Defaults: top-right
+;;               anchor, stacked, the default size, focused on open.
 ;;
-;; Registering the same ID again replaces its record and its key binding.  Each
-;; open creates a session from `:create', so a closed panel leaves nothing
-;; running.
+;; Registering the same ID again replaces its record and its shortcut.  A closed
+;; panel leaves nothing running unless `:keep-alive' is set.
+;;
+;; Function: etaf-posframe-app-quit (id)
+;;;###autoload (autoload 'etaf-posframe-app-quit "etaf-posframe" nil t)
+;; Stop application ID: hide its panel, call its `:on-stop' with the session and
+;; drop the session, so a `:keep-alive' app really exits.
 ;;
 ;; Function: etaf-posframe-app (id)
 ;;;###autoload (autoload 'etaf-posframe-app "etaf-posframe" nil t)
@@ -286,7 +267,7 @@ list; they come back when Emacs is active again.  Nil keeps them visible."
   :group 'etaf-posframe)
 
 (defcustom etaf-posframe-border-width 1
-  "Border drawn around a panel, in pixels, unless it passes :border-width.
+  "Border drawn around a panel, in pixels, unless `:border' sets a width.
 A one pixel border in the theme's border colour is what separates the panel
 from the buffer behind it and makes it read as a floating surface."
   :type 'integer
@@ -372,7 +353,7 @@ They close the panel without consulting the View.")
 
 (cl-defstruct (etaf-posframe--panel (:constructor etaf-posframe--make-panel))
   buffer frame parent parent-frame options timer restore-frame focused
-  fit-timer settled fit-window fit-count fit-muted-until)
+  fit-timer settled fit-window fit-count fit-muted-until close-callback)
 
 ;; A panel is returned to callers, so it must print: the Runtime and the Theme
 ;; ref are cyclic (refs, keymaps, closures), and `prin1' on them loops until
@@ -524,96 +505,158 @@ component's context and inherits both."
 area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 `point-top' place the panel at point.")
 
-(defconst etaf-posframe--option-keys
-  '(:at :cell :stack :width :height :header :draggable :pinned :focusable
-    :auto-focus :dismiss :timeout :theme :theme-mode :on-close :key
-    :border-width :border-color :focus-border-color :hover-border-color :fill
-    :offset)
+(defconst etaf-posframe--show-keys
+  '(:at :stack :width :height :fill-height :focusable :focus-on-open
+    :auto-hide :theme :border :draggable :title :key)
   "Options accepted by `etaf-posframe-show'.")
 
-(defun etaf-posframe--validate (options)
-  "Return OPTIONS after checking every key and value."
+(defconst etaf-posframe--app-keys
+  '(:create :view :require :shortcut :keep-alive :on-stop)
+  "Options accepted by `etaf-posframe-register-app'.")
+
+(defconst etaf-posframe--border-keys '(:width :color :focus :hover)
+  "Fields of the `:border' option plist.")
+
+(defun etaf-posframe--placement (value)
+  "Return the placement VALUE as (KIND . DATA).
+KIND is `anchor', `anchor+offset', `cells', `pixels' or `function'."
+  (cond
+   ((memq value etaf-posframe--anchors) (cons 'anchor value))
+   ((functionp value) (cons 'function value))
+   ((and (consp value) (eq (car value) 'cells) (= 3 (length value))
+         (wholenump (nth 1 value)) (wholenump (nth 2 value)))
+    (cons 'cells (cons (nth 1 value) (nth 2 value))))
+   ((and (consp value) (eq (car value) 'pixels) (consp (cdr value))
+         (numberp (nth 1 value)) (numberp (cddr value)))
+    (cons 'pixels (cdr value)))
+   ((and (consp value) (memq (car value) etaf-posframe--anchors)
+         (= 3 (length value))
+         (integerp (nth 1 value)) (integerp (nth 2 value)))
+    (list 'anchor+offset (car value) (nth 1 value) (nth 2 value)))
+   (t (signal 'etaf-posframe-error
+              (list (format "Unsupported panel :at: %S" value))))))
+
+(defun etaf-posframe--validate (options &optional app)
+  "Return OPTIONS after checking every key and value.
+With APP non-nil the registration keys are accepted as well."
   (unless (proper-list-p options)
     (signal 'etaf-posframe-error (list "Panel options must be a plist" options)))
   (let (result)
     (while options
       (let ((key (pop options))
             (value (pop options)))
-        (unless (memq key etaf-posframe--option-keys)
+        (unless (or (memq key etaf-posframe--show-keys)
+                    (and app (memq key etaf-posframe--app-keys)))
           (signal 'etaf-posframe-error
                   (list (format "Unknown panel option: %S" key))))
         (pcase key
-          ((or :width :height :timeout)
-           (unless (and (numberp value) (> value 0))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel %s must be a positive number: %S"
-                                   key value)))))
-          (:dismiss
-           (unless (memq value '(auto focus-out nil))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel :dismiss must be auto, focus-out or nil: %S"
-                                   value)))))
-          (:at
-           (unless (or (memq value etaf-posframe--anchors)
-                       (functionp value)
-                       (and (consp value) (numberp (car value))
-                            (numberp (cdr value))))
-             (signal 'etaf-posframe-error
-                     (list (format "Unsupported panel :at: %S" value)))))
-          (:cell
-           (unless (and (consp value)
-                        (wholenump (car value)) (wholenump (cdr value)))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel :cell must be a (ROW . COLUMN) pair of non-negative integers: %S"
-                                   value)))))
-          (:stack
-           (unless (or (null value) (eq value t))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel :stack must be t or nil: %S" value)))))
-          (:border-width
-           (unless (and (wholenump value) (< value 20))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel :border-width must be 0..19 pixels: %S"
-                                   value)))))
-          (:offset
-           (unless (or (functionp value)
-                       (and (consp value) (integerp (car value))
-                            (integerp (cdr value))))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel :offset must be a (ROWS . COLUMNS) pair of integers or a function returning one: %S"
-                                   value)))))
-          (:fill
+          (:at (etaf-posframe--placement value))
+          ((or :stack :fill-height :focusable :focus-on-open :draggable
+               :keep-alive)
            (unless (memq value '(t nil))
              (signal 'etaf-posframe-error
-                     (list (format "Panel :fill must be t or nil: %S" value)))))
-          ((or :border-color :focus-border-color :hover-border-color)
-           (unless (or (null value) (stringp value))
+                     (list (format "Panel %s must be t or nil: %S" key value)))))
+          ((or :width :height)
+           (unless (or (and (wholenump value) (> value 0))
+                       (and (consp value) (eq (car value) 'fraction)
+                            (= 2 (length value))
+                            (numberp (nth 1 value)) (> (nth 1 value) 0)
+                            (<= (nth 1 value) 1)))
              (signal 'etaf-posframe-error
-                     (list (format "Panel %s must be a color string or nil" key)
-                           value))))
-          (:on-close
-           (unless (or (null value) (functionp value))
+                     (list (format "Panel %s must be a positive cells count or (fraction F): %S"
+                                   key value)))))
+          (:auto-hide
+           (unless (or (memq value '(t nil))
+                       (and (numberp value) (> value 0)))
              (signal 'etaf-posframe-error
-                     (list "Panel :on-close must be a function" value))))
-          (:theme-mode
-           (unless (memq value '(auto light dark))
-             (signal 'etaf-posframe-error
-                     (list (format "Panel :theme-mode must be auto, light or dark: %S"
+                     (list (format "Panel :auto-hide must be t, nil or positive seconds: %S"
                                    value)))))
           (:theme
-           (unless (or (null value) (proper-list-p value)
+           (unless (or (memq value '(auto light dark))
+                       (proper-list-p value)
                        (etaf-ref-p value) (etaf-computed-p value))
              (signal 'etaf-posframe-error
-                     (list "Panel :theme must be a plist, ref or computed"
-                           value)))))
+                     (list "Panel :theme must be auto, light, dark, a plist, ref or computed"
+                           value))))
+          (:border
+           (unless (and (proper-list-p value)
+                        (zerop (% (length value) 2)))
+             (signal 'etaf-posframe-error
+                     (list "Panel :border must be a plist" value)))
+           (let ((plist value))
+             (while plist
+               (let ((field (pop plist))
+                     (field-value (pop plist)))
+                 (unless (memq field etaf-posframe--border-keys)
+                   (signal 'etaf-posframe-error
+                           (list (format "Unknown :border key: %S" field))))
+                 (if (eq field :width)
+                     (unless (and (wholenump field-value) (< field-value 20))
+                       (signal 'etaf-posframe-error
+                               (list (format "Panel :border :width must be 0..19 pixels: %S"
+                                             field-value))))
+                   (unless (or (null field-value) (stringp field-value))
+                     (signal 'etaf-posframe-error
+                             (list (format "Panel :border %s must be a color or nil: %S"
+                                           field field-value)))))))))
+          (:title
+           (unless (or (null value) (stringp value))
+             (signal 'etaf-posframe-error
+                     (list "Panel :title must be a string or nil" value))))
+          (:key
+           (unless (or (null value) (symbolp value))
+             (signal 'etaf-posframe-error
+                     (list "Panel :key must be a symbol identity" value))))
+          (:create
+           (unless (functionp value)
+             (signal 'etaf-posframe-error
+                     (list "Application :create must be a function" value))))
+          (:view
+           (unless (functionp value)
+             (signal 'etaf-posframe-error
+                     (list "Application :view must be a function" value))))
+          (:require
+           (unless (symbolp value)
+             (signal 'etaf-posframe-error
+                     (list "Application :require must be a feature symbol" value))))
+          (:shortcut
+           (unless (and (stringp value) (> (length value) 0))
+             (signal 'etaf-posframe-error
+                     (list "Application :shortcut must be a key string" value))))
+          (:on-stop
+           (unless (or (null value) (functionp value))
+             (signal 'etaf-posframe-error
+                     (list "Application :on-stop must be a function or nil" value)))))
         (setq result (plist-put result key value))))
     (when (and (plist-get result :stack)
-               (or (plist-get result :cell)
-                   (and (consp (plist-get result :at))
-                        (numberp (car (plist-get result :at))))))
+               (not (memq (car (etaf-posframe--placement
+                                (or (plist-get result :at) 'point)))
+                          '(anchor anchor+offset))))
       (signal 'etaf-posframe-error
-              (list "Panel :stack needs an anchor :at, not a fixed position")))
+              (list "Panel :stack needs an anchored :at")))
     result))
+
+(defun etaf-posframe--defaults (options)
+  "Return OPTIONS with the panel defaults applied once."
+  (let ((options (copy-sequence options)))
+    (dolist (pair (list (cons :at 'point)
+                        (cons :width etaf-posframe-default-width)
+                        (cons :height etaf-posframe-default-max-height)
+                        (cons :stack nil)
+                        (cons :fill-height nil)
+                        (cons :focusable nil)
+                        (cons :draggable nil)
+                        (cons :title nil)
+                        (cons :theme 'auto)))
+      (unless (plist-member options (car pair))
+        (setq options (plist-put options (car pair) (cdr pair)))))
+    (unless (plist-member options :focus-on-open)
+      (setq options (plist-put options :focus-on-open
+                               (plist-get options :focusable))))
+    (unless (plist-member options :auto-hide)
+      (setq options (plist-put options :auto-hide
+                               (if (plist-get options :focusable) nil t))))
+    options))
 
 (defun etaf-posframe--rect (info kind)
   "Return (LEFT TOP RIGHT BOTTOM) pixels for anchor KIND.
@@ -762,16 +805,14 @@ start at zero, so (0 . 0) is its first cell."
 
 (defun etaf-posframe--draggable-p (options)
   "Return non-nil when OPTIONS make the panel draggable."
-  (and (plist-get options :header)
-       (or (plist-get options :draggable)
-           (plist-get options :pinned))))
+  (and (plist-get options :title)
+       (plist-get options :draggable)))
 
 ;;; Dismissal
 
 (defun etaf-posframe--auto-panel-p (panel)
   "Return non-nil when PANEL hides before the next outside command."
-  (and (eq (plist-get (etaf-posframe--panel-options panel) :dismiss) 'auto)
-       (not (plist-get (etaf-posframe--panel-options panel) :pinned))))
+  (eq (plist-get (etaf-posframe--panel-options panel) :auto-hide) t))
 
 (defun etaf-posframe--pre-command ()
   "Hide auto panels before a command that runs outside them."
@@ -784,26 +825,12 @@ start at zero, so (0 . 0) is its first cell."
           (etaf-posframe-hide panel))))))
 
 (defun etaf-posframe--focus-change ()
-  "Hide transient panels when focus leaves them or their parent frame."
+  "Track which panel holds the focus and repaint after a focus change."
   (unless etaf-posframe--dismissing
-    (let ((etaf-posframe--dismissing t)
-          (selected (selected-frame)))
+    (let ((selected (selected-frame)))
       (dolist (panel (copy-sequence etaf-posframe--panels))
-        (let* ((frame (etaf-posframe--panel-frame panel))
-               (parent (etaf-posframe--panel-parent-frame panel))
-               (dismiss (plist-get (etaf-posframe--panel-options panel) :dismiss)))
-          (cond
-           ((not (frame-live-p frame)))
-           ((eq selected frame)
-            (setf (etaf-posframe--panel-focused panel) t))
-           ((and (etaf-posframe--panel-focused panel)
-                 (memq dismiss '(auto focus-out)))
-            (etaf-posframe-hide panel))
-           ((and (eq dismiss 'auto)
-                 (not (plist-get (etaf-posframe--panel-options panel) :pinned))
-                 (not (eq selected parent))
-                 (eq (frame-focus-state parent) nil))
-            (etaf-posframe-hide panel)))))
+        (when (eq selected (etaf-posframe--panel-frame panel))
+          (setf (etaf-posframe--panel-focused panel) t)))
       (etaf-posframe--refresh-hover)
       (etaf-posframe--paint-borders)
       (etaf-posframe--sync-activation))))
@@ -816,10 +843,7 @@ start at zero, so (0 . 0) is its first cell."
   (if etaf-posframe--panels
       (add-hook 'post-command-hook #'etaf-posframe--follow-focus)
     (remove-hook 'post-command-hook #'etaf-posframe--follow-focus))
-  (if (cl-some (lambda (panel)
-                 (memq (plist-get (etaf-posframe--panel-options panel) :dismiss)
-                       '(auto focus-out)))
-               etaf-posframe--panels)
+  (if etaf-posframe--panels
       (add-function :after after-focus-change-function
                     #'etaf-posframe--focus-change)
     (remove-function after-focus-change-function
@@ -884,37 +908,48 @@ start at zero, so (0 . 0) is its first cell."
       ;; of a View that paints no hover feedback would never appear.
       (setq-local track-mouse t))))
 
+(defun etaf-posframe--placement-poshandler (placement options)
+  "Return the poshandler for PLACEMENT with OPTIONS."
+  (let ((stack (plist-get options :stack)))
+    (pcase (car placement)
+      ('cells (etaf-posframe--cell-poshandler (cdr placement)))
+      ('pixels (lambda (_info) (cdr placement)))
+      ('function (cdr placement))
+      ('anchor
+       (if stack
+           (etaf-posframe--stacking-poshandler (cdr placement))
+         (etaf-posframe--poshandler (cdr placement))))
+      ('anchor+offset
+       (let* ((anchor (nth 1 placement))
+              (offset (cons (nth 2 placement) (nth 3 placement)))
+              (base (if stack
+                        (etaf-posframe--stacking-poshandler anchor)
+                      (etaf-posframe--poshandler anchor))))
+         (etaf-posframe--offset-poshandler base offset))))))
+
 (defun etaf-posframe--frame-args (panel lines)
   "Return the `posframe-show' arguments for PANEL showing LINES of content."
   (let* ((options (etaf-posframe--panel-options panel))
-         (header (plist-get options :header))
-         (at (or (plist-get options :at) 'point))
-         (focusable (plist-get options :focusable)))
+         (title (plist-get options :title))
+         (border (plist-get options :border))
+         (theme (etaf-value (etaf-posframe--panel-theme panel))))
     (append
      (list :width (plist-get options :width)
-           :height (+ lines (if header 1 0))
-           :min-height (+ 1 (if header 1 0))
+           :height (+ lines (if title 1 0))
+           :min-height (+ 1 (if title 1 0))
            :left-fringe 0
            :right-fringe 0
-           :border-width (or (plist-get options :border-width)
+           :border-width (or (plist-get border :width)
                              etaf-posframe-border-width)
-           :border-color (or (plist-get options :border-color)
-                             (plist-get (etaf-value
-                                         (etaf-posframe--panel-theme panel))
-                                        :ui-panel-border))
+           :border-color (or (plist-get border :color)
+                             (plist-get theme :ui-panel-border))
            :internal-border-width 0
-           :respect-header-line (and header t)
-           :accept-focus (and focusable t)
+           :respect-header-line (and title t)
+           :accept-focus (and (plist-get options :focusable) t)
            ;; The frame paint matches the canvas surface so a sub-cell
            ;; remainder at the edge cannot show a second colour.
-           :background-color (or (plist-get (etaf-value
-                                             (etaf-posframe--panel-theme panel))
-                                            :ui-panel-bg)
-                                 "#FFFFFF")
-           :foreground-color (or (plist-get (etaf-value
-                                             (etaf-posframe--panel-theme panel))
-                                            :ui-fg)
-                                 "#000000")
+           :background-color (or (plist-get theme :ui-panel-bg) "#FFFFFF")
+           :foreground-color (or (plist-get theme :ui-fg) "#000000")
            :override-parameters
            (append
             '((horizontal-scroll-bars . nil)
@@ -923,19 +958,10 @@ start at zero, so (0 . 0) is its first cell."
               (snap-width . 12))
             (when (etaf-posframe--draggable-p options)
               '((drag-with-header-line . t)))))
-     (let* ((offset (plist-get options :offset))
-            (handler (cond ((plist-get options :cell)
-                            (etaf-posframe--cell-poshandler
-                             (plist-get options :cell)))
-                           ((and (consp at) (numberp (car at))
-                                 (numberp (cdr at)))
-                            (lambda (_info) at))
-                           ((and (plist-get options :stack) (symbolp at))
-                            (etaf-posframe--stacking-poshandler at))
-                           (t (etaf-posframe--poshandler at)))))
-       (list :poshandler (if offset
-                             (etaf-posframe--offset-poshandler handler offset)
-                           handler))))))
+     (list :poshandler
+           (etaf-posframe--placement-poshandler
+            (etaf-posframe--placement (plist-get options :at))
+            options)))))
 
 (defun etaf-posframe--fit (panel)
   "Fit PANEL's Runtime to WINDOW's frame width and its body height.
@@ -972,14 +998,17 @@ already has is what turns one resize into a stream of size-change hooks."
          (options (etaf-posframe--panel-options panel))
          (width (plist-get options :pixel-width))
          (line (frame-char-height frame))
-         (header (if (plist-get options :header)
+         (header (if (plist-get options :title)
                      (window-header-line-height window)
                    0))
          (limit (+ (* (etaf-posframe--row-budget panel) line) header))
          (content (+ (or (etaf-posframe--text-height panel window) 0) header))
-         ;; `:fill' keeps the frame at the row budget, so an application with a
-         ;; fixed-size board gets a full stage and the surface fills the rest.
-         (height (if (plist-get options :fill) limit (min content limit))))
+         ;; `:fill-height' keeps the frame at the row budget, so an application
+         ;; with a fixed-size board gets a full stage and the surface fills the
+         ;; rest.
+         (height (if (plist-get options :fill-height)
+                     limit
+                   (min content limit))))
     (when (and width (> height 0)
                (or (/= width (frame-pixel-width frame))
                    (/= height (frame-pixel-height frame))))
@@ -1006,7 +1035,8 @@ Re-fit once when the settled window width changes the content height."
          ;; A filled panel is created at its full height, so the poshandler
          ;; places the stage it will keep instead of the one-row frame a short
          ;; View produces before the fit.
-         (lines (max 1 (if (plist-get (etaf-posframe--panel-options panel) :fill)
+         (lines (max 1 (if (plist-get (etaf-posframe--panel-options panel)
+                                     :fill-height)
                            budget
                          (min lines budget))))
          (args (etaf-posframe--frame-args panel lines))
@@ -1024,7 +1054,7 @@ Re-fit once when the settled window width changes the content height."
                      (plist-put (copy-sequence args) :height
                                 (+ settled (if (plist-get
                                                (etaf-posframe--panel-options panel)
-                                               :header)
+                                               :title)
                                                1 0)))))))))
     (let ((window (get-buffer-window buffer t)))
       (unless (window-live-p window)
@@ -1035,7 +1065,7 @@ Re-fit once when the settled window width changes the content height."
       ;; so a vertical anchor would be off by the difference.  Show once more
       ;; with the settled height: posframe then places the frame it will keep.
       (let ((settled (+ (window-body-height window)
-                        (if (plist-get (etaf-posframe--panel-options panel) :header)
+                        (if (plist-get (etaf-posframe--panel-options panel) :title)
                             1
                           0))))
         (unless (= settled lines)
@@ -1045,30 +1075,24 @@ Re-fit once when the settled window width changes the content height."
       (window-frame window))))
 
 (defun etaf-posframe--border-color (panel focused hovered)
-  "Return PANEL's border colour, the accent colour while FOCUSED or HOVERED.
-Hovering and holding the focus paint the same accent, so moving the pointer onto
-a panel and then clicking it changes nothing on screen."
-  (when (or focused hovered
-            (not (memq :focus-border-color
-                       (etaf-posframe--panel-options panel))))
-    (let* ((theme-ref (etaf-posframe--panel-theme panel))
-           (palette (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
-           (options (etaf-posframe--panel-options panel))
-           (accent (if (memq :focus-border-color options)
-                       (plist-get options :focus-border-color)
-                     (plist-get palette :ui-accent)))
-           (resting (or (plist-get options :border-color)
-                        (plist-get palette :ui-panel-border))))
-      (cond (focused accent)
-            ;; A hovered panel does not hold the keyboard, so it takes the
-            ;; accent diluted into the surface: the border brightens into the
-            ;; full accent when the click lands, instead of looking focused
-            ;; before it.
-            (hovered (or (plist-get options :hover-border-color)
-                         (etaf-posframe--mix (or (plist-get palette :ui-panel-bg)
-                                                 resting)
-                                             accent 0.45)))
-            (t resting)))))
+  "Return PANEL's border colour for the FOCUSED or HOVERED state."
+  (let* ((theme-ref (etaf-posframe--panel-theme panel))
+         (palette (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
+         (options (etaf-posframe--panel-options panel))
+         (border (plist-get options :border))
+         (resting (or (plist-get border :color)
+                      (plist-get palette :ui-panel-border)))
+         (accent (or (plist-get border :focus)
+                     (plist-get palette :ui-accent))))
+    (cond (focused accent)
+          ;; A hovered panel does not hold the keyboard, so it takes the
+          ;; accent diluted into the surface: the border brightens into the
+          ;; full accent when the click lands.
+          (hovered (or (plist-get border :hover)
+                       (etaf-posframe--mix (or (plist-get palette :ui-panel-bg)
+                                               resting)
+                                           accent 0.45)))
+          (t resting))))
 
 (defun etaf-posframe--paint-border (panel)
   "Colour PANEL's border by whether it holds the focus or the pointer."
@@ -1281,11 +1305,10 @@ panel was hidden."
     (etaf-posframe--teardown panel)
     (etaf-posframe--refresh-hooks)
     (etaf-posframe--paint-borders)
-    (when-let* ((callback (plist-get (etaf-posframe--panel-options panel)
-                                     :on-close)))
+    (when-let* ((callback (etaf-posframe--panel-close-callback panel)))
       (condition-case error
           (funcall callback panel)
-        (error (message "ETAF panel on-close failed: %s"
+        (error (message "ETAF panel close callback failed: %s"
                         (error-message-string error)))))
     t))
 
@@ -1293,13 +1316,15 @@ panel was hidden."
   "Apply the current frame Theme to every live panel."
   (dolist (panel (copy-sequence etaf-posframe--panels))
     (let ((theme (etaf-posframe--panel-theme panel))
-          (parent-frame (etaf-posframe--panel-parent-frame panel)))
-      (when (and (etaf-ref-p theme) (frame-live-p parent-frame))
+          (parent-frame (etaf-posframe--panel-parent-frame panel))
+          (options (etaf-posframe--panel-options panel)))
+      (when (and (etaf-ref-p theme) (frame-live-p parent-frame)
+                 (memq (plist-get options :theme) '(auto light dark)))
         (ignore-errors
-          (let* ((palette (etaf-posframe-theme
+          (let* ((mode (plist-get options :theme))
+                 (palette (etaf-posframe-theme
                            parent-frame
-                           (plist-get (etaf-posframe--panel-options panel)
-                                      :theme-mode)))
+                           (and (not (eq mode 'auto)) mode)))
                  (frame (etaf-posframe--panel-frame panel)))
             (etaf-batch (setf (etaf-value theme) palette))
             (when (frame-live-p frame)
@@ -1310,10 +1335,8 @@ panel was hidden."
             (ignore-errors (etaf-posframe--paint-border panel))
             (ignore-errors (etaf-posframe--sync-activation))
             (let ((buffer (etaf-posframe--panel-buffer panel))
-                  (header (plist-get (etaf-posframe--panel-options panel)
-                                     :header))
-                  (width (plist-get (etaf-posframe--panel-options panel)
-                                    :width)))
+                  (header (plist-get options :title))
+                  (width (plist-get options :width)))
               (when (buffer-live-p buffer)
                 (with-current-buffer buffer
                   (setq-local header-line-format
@@ -1347,16 +1370,6 @@ previous one; panels with distinct keys coexist."
       (etaf-posframe--panel-for-buffer (current-buffer))))
 
 ;;;###autoload
-(defun etaf-posframe--default-dismiss (options)
-  "Return OPTIONS with the default :dismiss for its focus mode.
-A focusable panel is an independent surface: it keeps its own keys and is
-closed explicitly.  A passive panel is a preview: it hides before the next
-command outside it."
-  (if (plist-member options :dismiss)
-      options
-    (plist-put options :dismiss
-               (if (plist-get options :focusable) nil 'auto))))
-
 (defun etaf-posframe-show (view &rest options)
   "Show VIEW in a floating panel and return the panel.
 VIEW is a View or a zero-argument function returning one.  OPTIONS is the plist
@@ -1373,26 +1386,36 @@ described in the package Commentary."
                (not (eq anchor-frame (selected-frame))))
       (select-frame anchor-frame)
       (set-buffer called-buffer)))
-  (let* ((options (etaf-posframe--default-dismiss
+  (let* ((options (etaf-posframe--defaults
                    (etaf-posframe--validate (copy-sequence options))))
          (parent-frame (etaf-posframe--top-frame))
          (parent-buffer (etaf-posframe--anchor-buffer (current-buffer)))
-         (char-width (frame-char-width parent-frame))
-         (available (max 20 (- (/ (frame-pixel-width parent-frame) char-width)
+         (char-width (max 1 (frame-char-width parent-frame)))
+         (char-height (max 1 (frame-char-height parent-frame)))
+         (parent-width (frame-pixel-width parent-frame))
+         (parent-height (frame-pixel-height parent-frame))
+         (available (max 20 (- (/ parent-width char-width)
                                (* 2 etaf-posframe--margin))))
-         (columns (min (or (plist-get options :width)
-                           etaf-posframe-default-width)
-                       available))
+         (width-spec (plist-get options :width))
+         (columns (max 1 (min (if (numberp width-spec)
+                                  width-spec
+                                (round (/ (* parent-width (nth 1 width-spec))
+                                          char-width)))
+                              available)))
          ;; A panel must fit its parent frame: the row budget is clamped to the
          ;; rows the frame can show, so a tall game panel cannot run off screen.
-         (capacity (max 4 (floor (- (frame-pixel-height parent-frame) 32)
-                                 (float (frame-char-height parent-frame)))))
-         (max-height (min (or (plist-get options :height)
-                              etaf-posframe-default-max-height)
-                          capacity))
-         (theme (or (plist-get options :theme)
+         (height-spec (plist-get options :height))
+         (budget (if (numberp height-spec)
+                     height-spec
+                   (round (/ (* parent-height (nth 1 height-spec)) char-height))))
+         (capacity (max 4 (floor (- parent-height 32) (float char-height))))
+         (max-height (min budget capacity))
+         (theme-spec (plist-get options :theme))
+         (theme (if (memq theme-spec '(auto light dark))
                     (etaf-posframe-theme parent-frame
-                                         (plist-get options :theme-mode))))
+                                         (and (not (eq theme-spec 'auto))
+                                              theme-spec))
+                  theme-spec))
          (theme-ref (if (or (etaf-ref-p theme) (etaf-computed-p theme))
                         theme
                       (etaf-ref theme)))
@@ -1413,7 +1436,7 @@ described in the package Commentary."
       (signal 'etaf-posframe-error (list "Panel View returned nil" view)))
     (setq buffer (generate-new-buffer
                   (format " *ETAF Panel %d*" (cl-incf etaf-posframe--counter))))
-    (etaf-posframe--prepare-buffer buffer (plist-get options :header)
+    (etaf-posframe--prepare-buffer buffer (plist-get options :title)
                                    (etaf-value theme-ref)
                                    (plist-get options :width))
     (unwind-protect
@@ -1452,16 +1475,14 @@ described in the package Commentary."
               (setq etaf-posframe--parent-panel panel)
               (add-hook 'kill-buffer-hook #'etaf-posframe--parent-killed nil t))
             (push panel etaf-posframe--panels)
-            (when-let* ((timeout (plist-get options :timeout)))
+            (when-let* ((seconds (plist-get options :auto-hide))
+                        ((numberp seconds)))
               (setf (etaf-posframe--panel-timer panel)
-                    (run-at-time timeout nil
+                    (run-at-time seconds nil
                                  (lambda ()
                                    (when (memq panel etaf-posframe--panels)
                                      (etaf-posframe-hide panel))))))
-            (when (and (plist-get options :focusable)
-                       (if (plist-member options :auto-focus)
-                           (plist-get options :auto-focus)
-                         t))
+            (when (plist-get options :focus-on-open)
               (etaf-posframe--focus panel))
             (etaf-posframe--refresh-hooks)
             panel))
@@ -1498,7 +1519,7 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
          (options (etaf-posframe--panel-options panel))
          (char (frame-char-width frame))
          (width (window-body-width window t))
-         (header (if (plist-get options :header)
+         (header (if (plist-get options :title)
                      (window-header-line-height window)
                    0))
          (rows (max 1 (floor (- (window-pixel-height window) header)
@@ -1514,7 +1535,7 @@ app, show more or fewer rows.  Return non-nil when the panel adopted a size."
                                          :pixel-width width)
                                :width (max 1 (round (/ width (float char)))))
             resized t)
-      (when-let* ((text (plist-get adopted :header))
+      (when-let* ((text (plist-get adopted :title))
                   (theme-ref (etaf-posframe--panel-theme panel))
                   (theme (and (etaf-ref-p theme-ref) (etaf-value theme-ref)))
                   (buffer (etaf-posframe--panel-buffer panel)))
@@ -1661,11 +1682,11 @@ it once per repeat and stall Emacs."
 (defvar etaf-posframe--app-toggled-at (make-hash-table :test #'eq)
   "Time of each application's last real toggle, for the repeat guard.")
 
-(defconst etaf-posframe--app-options
-  '(:at :stack :width :height :header :focusable :auto-focus :dismiss :timeout
-    :theme :theme-mode :border-width :border-color :focus-border-color :fill
-    :offset)
+(defconst etaf-posframe--app-options etaf-posframe--show-keys
   "Registration keys handed to `etaf-posframe-show' unchanged.")
+
+(defvar etaf-posframe--app-sessions (make-hash-table :test #'eq)
+  "Live application sessions by registration ID, for `:keep-alive' apps.")
 
 (defun etaf-posframe--app-show-options (record)
   "Return the `etaf-posframe-show' options RECORD carries.
@@ -1688,9 +1709,9 @@ can use the whole panel vocabulary without the registry listing it again."
   (let ((map (make-sparse-keymap)))
     (dolist (entry etaf-posframe-apps)
       (let ((id (car entry))
-            (key (plist-get (cdr entry) :key)))
-        (when key
-          (define-key map (kbd key)
+            (shortcut (plist-get (cdr entry) :shortcut)))
+        (when shortcut
+          (define-key map (kbd shortcut)
                       (lambda () (interactive) (etaf-posframe-app id))))))
     map))
 
@@ -1754,12 +1775,14 @@ has focus."
 ;;;###autoload
 (defun etaf-posframe-app (id)
   "Open or close the registered application ID's panel.
-Without ID, prompt among the registered applications."
+A `:keep-alive' application is only hidden: its session stays in the registry
+and the next open resumes it.  Return the panel, or nil when it hid one."
   (interactive
    (list (intern (completing-read "ETAF 应用: "
                                   (mapcar #'car etaf-posframe-apps) nil t))))
   (let* ((record (etaf-posframe-app-record id))
          (panel (gethash id etaf-posframe--app-panels))
+         (keep (plist-get record :keep-alive))
          (now (float-time)))
     (if (etaf-posframe-live-p panel)
         (progn
@@ -1772,27 +1795,55 @@ Without ID, prompt among the registered applications."
         (puthash id now etaf-posframe--app-toggled-at)
         (when-let* ((feature (plist-get record :require)))
           (require feature nil t))
-        (puthash id
-                 (apply #'etaf-posframe-show
-                        (funcall (plist-get record :view)
-                                 (funcall (plist-get record :create)))
-                        (append
-                         ;; Defaults first, then the registration, then the
-                         ;; keys this registry owns.
-                         (list :at 'frame-top-right
-                               :stack t
-                               :width etaf-posframe-default-width
-                               :height etaf-posframe-default-max-height
-                               :header (plist-get record :title)
-                               :pinned t
-                               :focusable t)
-                         (etaf-posframe--app-show-options record)
-                         (list :key id
-                               :on-close
-                               (lambda (_panel)
-                                 (puthash id nil etaf-posframe--app-panels)))))
-                 etaf-posframe--app-panels)
-        (gethash id etaf-posframe--app-panels)))))
+        (let* ((session (or (and keep (gethash id etaf-posframe--app-sessions))
+                            (funcall (plist-get record :create))))
+               (panel (apply #'etaf-posframe-show
+                             (funcall (plist-get record :view) session)
+                             (append
+                              ;; Defaults first, then the registration, then
+                              ;; the keys this registry owns.
+                              (list :at 'frame-top-right
+                                    :stack t
+                                    :width etaf-posframe-default-width
+                                    :height etaf-posframe-default-max-height
+                                    :title (plist-get record :title)
+                                    :focusable t)
+                              (etaf-posframe--app-show-options record)
+                              (list :key id)))))
+          (when keep
+            (puthash id session etaf-posframe--app-sessions))
+          (setf (etaf-posframe--panel-close-callback panel)
+                (lambda (_panel)
+                  (puthash id nil etaf-posframe--app-panels)
+                  (unless keep
+                    (etaf-posframe--app-stop id session))))
+          (puthash id panel etaf-posframe--app-panels)
+          panel)))))
+
+(defun etaf-posframe--app-stop (id session)
+  "Release SESSION of application ID and forget it."
+  (remhash id etaf-posframe--app-sessions)
+  (when-let* ((record (ignore-errors (etaf-posframe-app-record id)))
+              (stop (plist-get record :on-stop)))
+    (condition-case error
+        (funcall stop session)
+      (error (message "ETAF application %s :on-stop failed: %s"
+                      id (error-message-string error))))))
+
+;;;###autoload
+(defun etaf-posframe-app-quit (id)
+  "Stop application ID, hide its panel and release its session."
+  (interactive
+   (list (intern (completing-read "退出 ETAF 应用: "
+                                  (mapcar #'car etaf-posframe-apps) nil t))))
+  (let ((panel (gethash id etaf-posframe--app-panels))
+        (session (gethash id etaf-posframe--app-sessions)))
+    (when (etaf-posframe-live-p panel)
+      (etaf-posframe-hide panel))
+    (when session
+      (etaf-posframe--app-stop id session))
+    (puthash id nil etaf-posframe--app-panels)
+    nil))
 
 (provide 'etaf-posframe)
 ;;; etaf-posframe.el ends here

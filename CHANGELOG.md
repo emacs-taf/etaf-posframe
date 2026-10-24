@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- The panel vocabulary now has one option per concept.  Renames and merges:
+  `:header` becomes `:title`; `:focusable` and `:auto-focus` become
+  `:focusable` and `:focus-on-open`; `:dismiss` and `:timeout` become
+  `:auto-hide` (`nil`, `t` or seconds); `:theme` takes `auto`, `light`, `dark`
+  or a palette; `:at` takes `(ANCHOR ROWS COLS)`, `(cells ROW COL)` or
+  `(pixels X . Y)`, so `:cell` and `:offset` are gone; the four border options
+  become one `:border` plist; `:fill` becomes `:fill-height`; `:pinned` is
+  `:auto-hide nil`; the registration `:key` is `:shortcut`.
+- `:width` and `:height` accept `(fraction F)`, a share of the parent frame.
+- `:keep-alive` keeps an application running while its panel is hidden and
+  `:on-stop` releases it; `etaf-posframe-app-quit` stops it explicitly.
+
 - Panels hide while Emacs is inactive, so a window manager that lists child
   frames (macOS Mission Control) cannot offer them in place of the application
   behind them; `etaf-posframe-hide-inactive` turns it off.

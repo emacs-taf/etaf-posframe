@@ -28,9 +28,9 @@
               (should-error (etaf-posframe-show view :width 0)
                             :type 'etaf-posframe-error))))
     (should (string-match-p
-             "dismiss"
+             "auto-hide"
              (error-message-string
-              (should-error (etaf-posframe-show view :dismiss 'never)
+              (should-error (etaf-posframe-show view :auto-hide 'never)
                             :type 'etaf-posframe-error))))
     (should (string-match-p
              ":at"
@@ -38,9 +38,9 @@
               (should-error (etaf-posframe-show view :at 'nowhere)
                             :type 'etaf-posframe-error))))
     (should (string-match-p
-             "theme-mode"
+             "theme"
              (error-message-string
-              (should-error (etaf-posframe-show view :theme-mode 'sepia)
+              (should-error (etaf-posframe-show view :theme 'sepia)
                             :type 'etaf-posframe-error))))))
 
 (ert-deftest etaf-posframe-theme-returns-frame-colors ()
@@ -95,10 +95,10 @@
       (mapc #'etaf-posframe-hide (etaf-posframe-panels)))))
 
 (ert-deftest etaf-posframe-timeout-closes-the-panel ()
-  "A panel with :timeout hides by itself."
+  "A panel with :auto-hide seconds hides by itself."
   (skip-unless (display-graphic-p))
   (let* ((view (etaf-view (text "panel")))
-         (panel (etaf-posframe-show view :width 24 :height 3 :timeout 0.2))
+         (panel (etaf-posframe-show view :width 24 :height 3 :auto-hide 0.2))
          (deadline (+ (float-time) 3)))
     (should (etaf-posframe-live-p panel))
     ;; Poll instead of sleeping a fixed span: a busy session runs the hide
@@ -226,7 +226,7 @@ mismatch left empty frame to the right of the canvas."
   (skip-unless (display-graphic-p))
   (let* ((parent (selected-frame))
          (panel (etaf-posframe-show (etaf-view (text "panel"))
-                                    :width 24 :header "ETAF")))
+                                    :width 24 :title "ETAF")))
     (unwind-protect
         (let* ((frame (etaf-posframe-tests--panel-frame parent))
                (header (with-current-buffer (etaf-posframe-tests--panel-buffer frame)
@@ -245,7 +245,7 @@ mismatch left empty frame to the right of the canvas."
          (char (frame-char-width parent))
          (columns (max 20 (- (/ (frame-pixel-width parent) char) 40)))
          (panel (etaf-posframe-show (etaf-view (text "panel"))
-                                    :width columns :header "ETAF")))
+                                    :width columns :title "ETAF")))
     (unwind-protect
         (let* ((frame (etaf-posframe-tests--panel-frame parent))
                (window (etaf-posframe-tests--panel-window frame))
@@ -351,9 +351,9 @@ slot made that print follow a cycle until Emacs ran out of memory."
   "Toggle hides the panel of its own key and leaves the others open."
   (skip-unless (display-graphic-p))
   (let* ((first (etaf-posframe-show (etaf-view (text "first")) :key 'first
-                                    :width 24 :height 2 :pinned t))
+                                    :width 24 :height 2))
          (second (etaf-posframe-show (etaf-view (text "second")) :key 'second
-                                     :width 24 :height 2 :pinned t)))
+                                     :width 24 :height 2)))
     (unwind-protect
         (progn
           (should-not (etaf-posframe-toggle (etaf-view (text "first")) :key 'first
@@ -400,7 +400,7 @@ sized from its content."
                              (- (nth 3 edges) (cdr size) window-margin))))))))
 
 (ert-deftest etaf-posframe-cell-places-a-panel-at-character-cells ()
-  "A :cell pair lands on the same cell whatever the panel size."
+  "An :at (cells ...) placement lands on the same cell whatever the panel size."
   (skip-unless (display-graphic-p))
   (let* ((parent (selected-frame))
          (edges (window-inside-pixel-edges (selected-window)))
@@ -408,27 +408,27 @@ sized from its content."
          (char-height (frame-char-height parent))
          (origin (cons (nth 0 edges) (nth 1 edges))))
     (should (equal (plist-get (etaf-posframe-tests--placement
-                               parent 20 2 :cell '(0 . 0))
+                               parent 20 2 :at '(cells 0 0))
                               :at)
                    origin))
     (should (equal (plist-get (etaf-posframe-tests--placement
-                               parent 30 4 :cell '(0 . 0))
+                               parent 30 4 :at '(cells 0 0))
                               :at)
                    origin))
     (should (equal (plist-get (etaf-posframe-tests--placement
-                               parent 20 2 :cell '(3 . 5))
+                               parent 20 2 :at '(cells 3 5))
                               :at)
                    (cons (+ (car origin) (* 5 char-width))
                          (+ (cdr origin) (* 3 char-height)))))))
 
-(ert-deftest etaf-posframe-rejects-a-bad-cell ()
-  "A :cell that is not a pair of non-negative integers signals an error."
+(ert-deftest etaf-posframe-rejects-a-bad-placement ()
+  "A placement that is not an anchor, a tagged pair or a function is rejected."
   (let ((view (etaf-view (text "x"))))
-    (dolist (cell '((-1 . 2) (1.5 . 2) 3 ("a" . 1)))
+    (dolist (value '((-1 . 2) (1.5 . 2) 3 ("a" . 1) (cells "a" 1)))
       (should (string-match-p
-               ":cell"
+               ":at"
                (error-message-string
-                (should-error (etaf-posframe-show view :cell cell)
+                (should-error (etaf-posframe-show view :at value)
                               :type 'etaf-posframe-error)))))))
 
 (ert-deftest etaf-posframe-panel-opened-in-a-panel-is-independent ()
@@ -512,7 +512,7 @@ command after a close used to freeze."
          (char (frame-char-width parent))
          (panel (etaf-posframe-show (etaf-view (text "x"))
                                     :width 24 :height 2
-                                    :border-width 2 :border-color "#123456")))
+                                    :border '(:width 2 :color "#123456"))))
     (unwind-protect
         (let ((frame (etaf-posframe-tests--panel-frame parent)))
           (should (= 2 (frame-parameter frame 'child-frame-border-width)))
@@ -525,8 +525,8 @@ command after a close used to freeze."
 (ert-deftest etaf-posframe-rejects-stack-without-an-anchor ()
   ":stack needs an anchored place, not a cell or a pixel pair."
   (let ((view (etaf-view (text "x"))))
-    (dolist (options '((:stack t :cell (0 . 0))
-                       (:stack t :at (10 . 10))))
+    (dolist (options '((:stack t :at (cells 0 0))
+                       (:stack t :at (pixels 10 . 10))))
       (should (string-match-p
                "stack"
                (error-message-string
@@ -543,12 +543,12 @@ command after a close used to freeze."
     (unwind-protect
         (progn
           (etaf-posframe-register-app 'test-one
-                                      :title "One" :key "1"
+                                      :title "One" :shortcut "1"
                                       :create #'ignore
                                       :view (lambda (_session) (etaf-view (text "one")))
                                       :width 20 :height 2)
           (etaf-posframe-register-app 'test-two
-                                      :title "Two" :key "2"
+                                      :title "Two" :shortcut "2"
                                       :create #'ignore
                                       :view (lambda (_session) (etaf-view (text "two")))
                                       :width 20 :height 2)
@@ -573,9 +573,9 @@ command after a close used to freeze."
   (skip-unless (display-graphic-p))
   (let* ((origin (selected-frame))
          (first (etaf-posframe-show (etaf-view (text "first")) :key 'cycle-one
-                                    :width 24 :height 2 :pinned t))
+                                    :width 24 :height 2))
          (second (etaf-posframe-show (etaf-view (text "second")) :key 'cycle-two
-                                     :width 24 :height 2 :pinned t)))
+                                     :width 24 :height 2)))
     (unwind-protect
         (progn
           (etaf-posframe-cycle)
@@ -598,10 +598,10 @@ switches it without running any panel command."
       (select-frame origin))
     (let* ((first (etaf-posframe-show (etaf-view (text "first"))
                                       :key 'border-one :width 24 :height 2
-                                      :pinned t :focusable t))
+                                      :focusable t))
            (second (etaf-posframe-show (etaf-view (text "second"))
                                        :key 'border-two :width 24 :height 2
-                                       :pinned t :focusable t))
+                                       :focusable t))
            (colour (lambda (panel)
                      (face-attribute 'child-frame-border :background
                                      (etaf-posframe-panel-frame panel)))))
@@ -635,12 +635,12 @@ switches it without running any panel command."
         (ignore-errors (select-frame-set-input-focus origin))))))
 
 (ert-deftest etaf-posframe-fill-keeps-the-row-budget ()
-  "A panel with :fill keeps the row budget although its content is shorter."
+  "A panel with :fill-height keeps the row budget although its content is shorter."
   (skip-unless (display-graphic-p))
   (let* ((parent (etaf-posframe-tests--top-frame))
          (rows 12)
          (panel (etaf-posframe-show (etaf-view (text "short"))
-                                    :width 24 :height rows :fill t)))
+                                    :width 24 :height rows :fill-height t)))
     (unwind-protect
         (let* ((frame (etaf-posframe-tests--panel-frame parent))
                (window (etaf-posframe-tests--panel-window frame)))
@@ -654,7 +654,7 @@ switches it without running any panel command."
   (skip-unless (display-graphic-p))
   (let* ((parent (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "short"))
-                                    :width 24 :height 500 :fill t)))
+                                    :width 24 :height 500 :fill-height t)))
     (unwind-protect
         (let ((frame (etaf-posframe-tests--panel-frame parent)))
           (should (<= (frame-pixel-height frame) (frame-pixel-height parent)))
@@ -662,29 +662,19 @@ switches it without running any panel command."
                      10)))
       (etaf-posframe-hide panel))))
 
-(ert-deftest etaf-posframe-offset-shifts-an-anchor ()
-  "An offset moves a panel by character cells from the anchor it chose."
+(ert-deftest etaf-posframe-anchor-offset-shifts-the-anchor ()
+  "An (ANCHOR ROWS COLS) placement moves a panel by character cells."
   (skip-unless (display-graphic-p))
   (let* ((parent (etaf-posframe-tests--top-frame))
          (char-width (frame-char-width parent))
          (char-height (frame-char-height parent))
          (plain (etaf-posframe-tests--placement parent 20 2 :at 'frame-center))
          (origin (plist-get plain :at))
-         (shifted (etaf-posframe-tests--placement parent 20 2 :at 'frame-center
-                                                  :offset '(2 . -3)))
+         (shifted (etaf-posframe-tests--placement parent 20 2
+                                                  :at '(frame-center 2 -3)))
          (at (plist-get shifted :at)))
     (should (equal at (cons (- (car origin) (* 3 char-width))
                             (+ (cdr origin) (* 2 char-height)))))))
-
-(ert-deftest etaf-posframe-rejects-a-bad-offset ()
-  "An offset that is neither a pair of integers nor a function is rejected."
-  (let ((view (etaf-view (text "x"))))
-    (dolist (offset '(1 "2" (1.5 . 2) (a . b)))
-      (should (string-match-p
-               "offset"
-               (error-message-string
-                (should-error (etaf-posframe-show view :offset offset)
-                              :type 'etaf-posframe-error)))))))
 
 (ert-deftest etaf-posframe-hover-focuses-a-panel ()
   "The pointer on a panel focuses it when asked, and never a passive panel."
@@ -695,7 +685,7 @@ switches it without running any panel command."
          (origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "hover"))
                                     :key 'hover :width 24 :height 2
-                                    :pinned t :focusable t))
+                                    :focusable t))
          (frame (etaf-posframe-panel-frame panel)))
     (unwind-protect
         (progn
@@ -707,7 +697,7 @@ switches it without running any panel command."
           (etaf-posframe-hide panel)
           (setq panel (etaf-posframe-show (etaf-view (text "passive"))
                                           :key 'hover :width 24 :height 2
-                                          :pinned t :focusable nil)
+                                          :focusable nil)
                 frame (etaf-posframe-panel-frame panel))
           (select-frame origin)
           (etaf-posframe-tests--with-pointer-on
@@ -725,7 +715,7 @@ would offer the panel as a target instead of the application behind it."
   (let* ((origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "inactive"))
                                     :key 'inactive :width 24 :height 2
-                                    :pinned t))
+                                   ))
          (frame (etaf-posframe-panel-frame panel)))
     (unwind-protect
         (progn
@@ -745,7 +735,7 @@ would offer the panel as a target instead of the application behind it."
   (let* ((origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "hover"))
                                     :key 'hover-border :width 24 :height 2
-                                    :pinned t :focusable t))
+                                    :focusable t))
          (frame (etaf-posframe-panel-frame panel)))
     (unwind-protect
         (progn
@@ -778,12 +768,12 @@ would offer the panel as a target instead of the application behind it."
   (let* ((origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "click"))
                                     :key 'click-panel :width 24 :height 2
-                                    :pinned t :focusable t))
+                                    :focusable t))
          (frame (etaf-posframe-panel-frame panel))
          (window (frame-root-window frame))
          (passive (etaf-posframe-show (etaf-view (text "passive"))
                                       :key 'click-passive :width 24 :height 2
-                                      :pinned t :focusable nil))
+                                      :focusable nil))
          (passive-window (frame-root-window
                           (etaf-posframe-panel-frame passive))))
     (unwind-protect
@@ -829,7 +819,7 @@ would offer the panel as a target instead of the application behind it."
   (let* ((origin (etaf-posframe-tests--top-frame))
          (panel (etaf-posframe-show (etaf-view (text "tone"))
                                     :key 'hover-tone :width 24 :height 2
-                                    :pinned t :focusable t))
+                                    :focusable t))
          (frame (etaf-posframe-panel-frame panel)))
     (unwind-protect
         (progn
@@ -853,8 +843,8 @@ would offer the panel as a target instead of the application behind it."
   (skip-unless (display-graphic-p))
   (let ((panel (etaf-posframe-show
                 (etaf-view (expr (format "appearance:%s" (etaf-appearance))))
-                :key 'appearance :width 24 :height 2 :pinned t
-                :theme-mode 'light)))
+                :key 'appearance :width 24 :height 2
+                :theme 'light)))
     (unwind-protect
         (should (string-match-p
                  "appearance:light"
@@ -863,6 +853,77 @@ would offer the panel as a target instead of the application behind it."
                                         (etaf-posframe-panel-frame panel)))
                    (buffer-substring-no-properties (point-min) (point-max)))))
       (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-fraction-size-follows-the-frame ()
+  "A (fraction F) width takes that share of the parent frame."
+  (skip-unless (display-graphic-p))
+  (let* ((parent (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "x"))
+                                    :key 'fraction :width '(fraction 0.5)
+                                    :height 2 :title "half")))
+    (unwind-protect
+        (let* ((frame (etaf-posframe-panel-frame panel))
+               (width (frame-pixel-width frame))
+               (expected (* 0.5 (frame-pixel-width parent))))
+          (should (< (abs (- width expected))
+                     (* 3 (frame-char-width parent)))))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-focus-on-open-controls-the-first-selection ()
+  "A focusable panel takes the keyboard on open only when asked."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (quiet (etaf-posframe-show (etaf-view (text "quiet"))
+                                    :key 'quiet :width 20 :height 2
+                                    :focusable t :focus-on-open nil))
+         (frame (etaf-posframe-panel-frame quiet)))
+    (unwind-protect
+        (progn
+          (should-not (eq (selected-frame) frame))
+          (etaf-posframe-hide quiet)
+          (setq quiet (etaf-posframe-show (etaf-view (text "loud"))
+                                          :key 'loud :width 20 :height 2
+                                          :focusable t :focus-on-open t)
+                frame (etaf-posframe-panel-frame quiet))
+          (should (eq (selected-frame) frame)))
+      (ignore-errors (etaf-posframe-hide quiet))
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
+(ert-deftest etaf-posframe-keep-alive-resumes-the-session ()
+  "A :keep-alive app is hidden and resumed; quitting stops it once."
+  (skip-unless (display-graphic-p))
+  (let ((saved-apps etaf-posframe-apps)
+        (saved-map etaf-posframe-app-map)
+        (created 0) (stopped 0) (sessions nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-register-app 'keep-test
+                                      :title "Keep" :shortcut "k"
+                                      :keep-alive t
+                                      :create (lambda () (cl-incf created) (list :id :session))
+                                      :view (lambda (session)
+                                              (push session sessions)
+                                              (etaf-view (text "keep")))
+                                      :on-stop (lambda (_session) (cl-incf stopped))
+                                      :width 20 :height 2)
+          (let* ((first (etaf-posframe-app 'keep-test))
+                 (session (car sessions))
+                 (second nil))
+            (should (etaf-posframe-live-p first))
+            (etaf-posframe-app 'keep-test)
+            (should-not (etaf-posframe-live-p first))
+            ;; A real toggle a moment later is not the repeat guard's target.
+            (sleep-for 0.5)
+            (setq second (etaf-posframe-app 'keep-test))
+            (should (etaf-posframe-live-p second))
+            (should (= created 1))
+            (should (eq (car sessions) session))
+            (etaf-posframe-app-quit 'keep-test)
+            (should (= stopped 1))
+            (should-not (memq second (etaf-posframe-panels)))))
+      (ignore-errors (etaf-posframe-app-quit 'keep-test))
+      (setq etaf-posframe-apps saved-apps
+            etaf-posframe-app-map saved-map))))
 
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

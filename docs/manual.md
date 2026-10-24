@@ -28,7 +28,7 @@ it to collect the data it shows and to refuse when there is nothing to show:
        (my-panel-view symbol)))
    :width 56
    :at 'point
-   :dismiss 'auto))
+   :auto-hide t))
 ```
 
 `etaf-posframe-toggle` hides the current buffer's open panel instead of stacking
@@ -50,8 +50,8 @@ frame, the palette and the row budget.  Opening the player is one call:
 ```elisp
 (etaf-posframe-show (etaf-ncm-view (etaf-ncm-create))
                     :width 110 :height 30
-                    :header "网易云音乐"
-                    :pinned t :focusable t)
+                    :title "网易云音乐"
+                    :focusable t)
 ```
 
 Pass the session in from outside: a View built inside the render may not create
@@ -86,8 +86,8 @@ command owns the panel.  Mounting an application is expensive, so a session per
               my-session (or my-session (etaf-ncm-create))
               my-panel (etaf-posframe-show
                         (etaf-ncm-view my-session)
-                        :width 110 :height 30 :header "Player"
-                        :pinned t :focusable t))))))
+                        :width 110 :height 30 :title "Player"
+                        :focusable t))))))
 ```
 
 Sixteen presses in a row measured 0.68 s and 79 MB of allocation without that,
@@ -95,31 +95,25 @@ and 0.22 s with 28 MB and a single mount with it.
 
 ## Options
 
-| Option | Meaning |
-| --- | --- |
-| `:at` | Placement.  `frame-PLACE` inside the parent frame, `window-PLACE` inside the current window's text area, `point` (default), `point-top`, a `(X . Y)` pixel pair, or a Posframe poshandler. |
-| `:cell` | Absolute `(ROW . COLUMN)` in character cells from the top left of the window's text area, counted from zero.  Wins over `:at`. |
-| `:width` | Content columns.  Defaults to `etaf-posframe-default-width`, clamped to the parent frame. |
-| `:height` | Maximum content lines.  Taller content clips; the frame still shrinks to the content. |
-| `:header` | Header line text.  Without it the panel has no header line and cannot be dragged. |
-| `:draggable` | Move the panel by dragging the header.  Defaults to `:pinned`. |
-| `:pinned` | Keep the panel open regardless of `:dismiss`. |
-| `:focusable` | Give the child frame keyboard focus, so the View's `:keys`, text inputs and buttons work.  Any click raises the panel, focusable or not. |
-| `:auto-focus` | Select the panel on open so its keys work without a click.  Defaults to `:focusable`; nil leaves it unfocused until clicked. |
-| `:dismiss` | `'auto` (default) hides before the next command outside the panel, `'focus-out` hides when focus leaves, nil keeps it. |
-| `:timeout` | Seconds after which the panel hides by itself. |
-| `:theme` | ETAF UI Theme plist; defaults to `etaf-posframe-theme` for the current frame. |
-| `:theme-mode` | `'auto` (default) follows the Emacs theme; `'light` or `'dark` pins the panel to that palette. |
-| `:on-close` | Function called with the panel after it is hidden. |
-| `:key` | Identity of the panel.  A show with a live key replaces that panel; different keys, or no key, coexist. |
-| `:border-width` | Border around the frame in pixels, default `etaf-posframe-border-width` (1).  `0` draws none. |
-| `:border-color` | Border colour; defaults to the Theme's panel border. |
-| `:stack` | With an anchor `:at`, place the panel clear of the panels already there, one gap below (or above, for a `bottom-*` anchor). |
-| `:fill` | Keep the frame at `:height` rows instead of shrinking to the content, so an application with a fixed-size board gets the stage it asked for. |
-| `:offset` | `(ROWS . COLUMNS)` character cells to shift whatever `:at`, `:cell` or `:stack` chose; negative rows go up, negative columns go left.  A function is called for the pair. |
+| Option | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `:at` | anchor; `(ANCHOR ROWS COLS)`; `(cells ROW COL)`; `(pixels X . Y)`; function | `point` | Where the panel goes.  An anchor names a frame or window place (`frame-top-right`, `window-center`, `point`); `(ANCHOR ROWS COLS)` shifts that anchor by character cells; `(cells ROW COL)` is an absolute character cell of the current window; `(pixels X . Y)` is frame pixels; a function is a Posframe poshandler. |
+| `:stack` | `t` / `nil` | `nil` | With an anchored `:at`, place the panel clear of the panels already there: downward from a top or centre anchor, upward from a bottom one. |
+| `:width` | integer cells; `(fraction F)` | `etaf-posframe-default-width` | Content columns, or `F` of the parent frame's width.  Clamped to the parent frame; a frame resized from outside becomes the width instead. |
+| `:height` | integer rows; `(fraction F)` | `etaf-posframe-default-max-height` | Row budget: the content lines the View lays out for, or `F` of the parent frame's height.  Taller content clips; a frame resized from outside becomes the budget. |
+| `:fill-height` | `t` / `nil` | `nil` | Keep the frame at the row budget instead of shrinking to the content, so an application with a fixed-size board fills the stage it asked for. |
+| `:title` | string | none | Title-bar text.  Without it there is no header line and the panel cannot be dragged. |
+| `:draggable` | `t` / `nil` | `nil` | Move the panel by dragging its title bar.  Needs `:title`. |
+| `:focusable` | `t` / `nil` | `nil` (`t` for registered apps) | Let the panel take the keyboard, so its View's `:keys`, text inputs and buttons receive input.  A click anywhere in a panel raises it either way. |
+| `:focus-on-open` | `t` / `nil` | same as `:focusable` | Select the panel when it opens.  Nil on a focusable panel leaves it unfocused until it is clicked; it means nothing on a non-focusable panel. |
+| `:auto-hide` | `nil` / `t` / positive number | `nil` (focusable), `t` (passive) | `nil` keeps the panel until it is closed; `t` hides it as soon as the user works elsewhere (a preview disappears when the pointer or the keyboard moves on); a number hides it after that many seconds. |
+| `:theme` | `auto` / `light` / `dark` / Theme plist or ref | `auto` | `auto` follows the Emacs theme; `light` or `dark` pin the panel to that palette; a Theme plist or a reactive ref uses that palette as it is. |
+| `:border` | plist `(:width W :color C :focus F :hover H)` | 1 px, theme colours | Frame border: W pixels 0..19, the resting colour, the focused colour and the hovered colour.  The focused default is the Theme's accent; the hovered default is the accent at 45% over the surface, so hovering hints and clicking commits. |
+| `:key` | symbol | none | Identity of the panel.  A show with a live key replaces that panel; different keys keep their own frame, Runtime and position. |
 
-Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
-unsupported `:at` signal `etaf-posframe-error` before any frame is created.
+Unknown keys, a size that is neither a positive cell count nor a fraction, an
+unsupported `:at` and an invalid `:border` signal `etaf-posframe-error` before
+any frame is created.
 
 ## Registering an application
 
@@ -133,7 +127,7 @@ and open its panel with a single call.
                             :view #'etaf-ncm-view
                             :require 'etaf-ncm
                             :width 100 :height 24
-                            :key "m"
+                            :shortcut "m"
                             :at 'frame-top-right :stack t)
 
 (global-set-key (kbd "C-c p") #'etaf-posframe-app-prefix)
@@ -142,12 +136,27 @@ and open its panel with a single call.
 ```
 
 A registration records the title, the session factory, the View accessor, the
-size, the placement and an optional shortcut; `etaf-posframe-app` opens or closes
-that application's panel, replacing only its own panel and mounting a fresh
-session each time.  `etaf-posframe-app-prefix` reads one key and dispatches it
-through the registrations, so the caller binds a single prefix and never
-rebuilds a keymap.  Every application registered this way stacks with the
-others: opening the player and then a reader tiles both beside each other.
+size, the placement, an optional shortcut and the application's behaviour.
+`etaf-posframe-app` opens or closes that application's panel, replacing only its
+own panel.  The behaviour options are the four a registration can answer:
+
+| Option | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `:focusable` | `t` / `nil` | `t` | Give the panel the keyboard. |
+| `:focus-on-open` | `t` / `nil` | `t` | Select it when it opens; nil on a focusable panel means the keyboard arrives only when it is clicked. |
+| `:auto-hide` | `nil` / `t` / seconds | `nil` | Hide it when the user works elsewhere, or after that many seconds. |
+| `:keep-alive` | `t` / `nil` | `nil` | `t` hides the panel on close and keeps the session, so music or a game continues and the next open resumes it; `nil` stops the application with the panel. |
+| `:on-stop` | function (session) | none | Called when the application really stops, to release its backend. |
+
+A fresh session is created on every open unless `:keep-alive` is set, in which
+case the session survives the hidden panel and the next open reuses it.
+`etaf-posframe-app-quit` hides the panel, calls `:on-stop` and drops the session,
+so a background application can still be stopped for real.
+
+`etaf-posframe-app-prefix` reads one key and dispatches it through the
+registrations, so the caller binds a single prefix and never rebuilds a keymap.
+Every application registered this way stacks with the others: opening the player
+and then a reader tiles both beside each other.
 
 ## Several panels at once
 
@@ -186,42 +195,20 @@ px inside the window), so it never sits on the parent's scroll bar or border.
 `point` (the default) and `point-top` follow point, a `(X . Y)` cons is frame
 pixels, and a function is a Posframe poshandler.
 
-`:cell` places the panel at an absolute character cell:
+`(cells ROW COL)` places the panel at an absolute character cell, counted from
+zero at the top left of the current window's text area:
 
 ```elisp
-(etaf-posframe-show view :cell '(0 . 0))   ;; first cell of the window
-(etaf-posframe-show view :cell '(3 . 5))   ;; fourth row, sixth column
+(etaf-posframe-show view :at '(cells 0 0))   ;; first cell of the window
+(etaf-posframe-show view :at '(cells 3 5))   ;; fourth row, sixth column
 ```
 
-Rows and columns count from zero at the top left of the window's text area and
-follow the parent frame's character metrics, so the same `:cell` lands on the
-same cell whatever the panel's own size is.  `:cell` wins over `:at`.
-
-`:offset` moves the result in character cells, so a panel can start from an
-anchor instead of a counted position:
-
-```elisp
-(etaf-posframe-show view :at 'frame-center :offset '(-1 . 0))   ;; one row up
-(etaf-posframe-show view :at 'frame-top-right :offset '(2 . -4))
-(etaf-posframe-show view :at 'frame-center :offset (lambda () (cons 0 (my-shift))))
-```
-
-It composes with `:at`, `:cell` and `:stack`, so `(:at 'frame-bottom-right
-:offset '(0 . -20))` is the bottom right corner twenty columns to the left, and
-a function lets the caller compute the pair at open time.
-
-`:offset` moves the result in character cells, so a panel can start from an
-anchor instead of a counted position:
-
-```elisp
-(etaf-posframe-show view :at 'frame-center :offset '(-1 . 0))    ;; one row up
-(etaf-posframe-show view :at 'frame-top-right :offset '(2 . -4))
-(etaf-posframe-show view :at 'frame-center :offset (lambda () (cons 0 (my-shift))))
-```
-
-It composes with `:at`, `:cell` and `:stack`: the bottom right corner twenty
-columns to the left is `:at 'frame-bottom-right :offset '(0 . -20)`, and a
-function lets the caller compute the pair when the panel opens.
+`(ANCHOR ROWS COLS)` starts from an anchor and moves by character cells: rows
+positive go down and columns positive go right, so `(frame-center -3 0)` is the
+middle of the frame three rows up and `(frame-top-right 2 -4)` sits two rows
+below the corner and four columns to its left.  A cell or pixel position is
+already exact and takes no offset; `(pixels X . Y)` is frame pixels and a
+function is a Posframe poshandler.
 
 `:stack` turns an anchor into a run of panels: the next panel opened at the same
 anchor is placed clear of the ones already there, `etaf-posframe--stack-gap`
@@ -246,23 +233,20 @@ symbol anchor, not a fixed position:
 Every panel draws a one pixel border in the Theme's panel border colour, so it
 reads as a surface above the buffer rather than a hole in it.  The panel that
 holds the input focus paints its border in the Theme's accent instead, which is
-how you see where the keyboard is while several panels are open; the frame behind
-them has no border at all.  `:focus-border-color` overrides that colour and
-`(nil)` turns the hint off.  Clicking a panel focuses it and the border follows
-the selection, so the hint always matches where the keyboard goes.
+how you see where the keyboard is while several panels are open; a hovered panel
+takes the accent at 45% over its surface, so hovering hints and clicking
+commits.  `:border` sets the width and the resting, focused and hovered colours
+in one plist; the border is painted outside the text area, so the content width
+stays exact.  Clicking a panel focuses it and the border follows the selection,
+so the hint always matches where the keyboard goes.
 
-`etaf-posframe-focus-follows-mouse` (default nil) additionally focuses a panel
-when a mouse event lands inside it.  It is off by default because Emacs cannot
-otherwise see the pointer over a child frame: `mouse-autoselect-window` and
-`focus-follows-mouse` act on the position Emacs reports, and over a child frame
-on macOS that position is the parent frame.  A pointer that enters and stops
-without an event therefore never focuses the panel, so relying on it would be
-unpredictable.  The accent follows the selection, so clicking a
-panel or the frame behind it moves it without running a panel command.
-
-`:border-width`
-changes or removes it and `:border-color` overrides the colour; both keep the
-content width exact, because the border is painted outside the text area.
+`etaf-posframe-focus-follows-mouse` (default nil) additionally focuses the panel
+under the pointer.  Emacs reports the child frame under the pointer through
+`mouse-pixel-position`, so the reading is exact; it is off by default because a
+resting pointer should not move the keyboard away from another window.  A click
+always focuses a focusable panel, and the accent follows the selection, so
+clicking a panel or the frame behind it moves it without running a panel
+command.
 
 ## Lifecycle and ownership
 
@@ -280,8 +264,8 @@ first.
 `etaf-posframe-panel-keys` is active while a focusable panel has focus and
 closes it on `q`, `ESC` and `C-g`; it outranks the renderer's own map for those
 three keys.  The View's own `:keys` handle the rest.  A focusable panel selects
-itself on open (`:auto-focus`), and hiding returns focus to the frame that was
-selected before.  Passive panels never see the keyboard: the next command runs
+itself on open unless `:focus-on-open' is nil, and hiding returns focus to the
+frame that was selected before.  Passive panels never see the keyboard: the next command runs
 in the buffer that owns point and the panel hides.
 
 ## Sizing
@@ -290,8 +274,11 @@ A panel renders at the width it is given, so its height follows the content.
 `:height` caps that height; content above the cap is clipped by the Runtime's
 viewport, and a budget taller than the parent frame is clamped to the rows that
 fit on screen.  A panel that must be exactly its budget tall, such as a game
-board on a fixed grid, passes `:fill t`: the frame keeps every row and the
-surface paints the rest.  Width is clamped to the parent frame, so a wide request still fits.
+board on a fixed grid, passes `:fill-height t`: the frame keeps every row and
+the surface paints the rest.  Both `:width` and `:height` also take
+`(fraction F)`, a share of the parent frame's width or height, so a panel can
+open at half the window without counting columns.  Width is clamped to the
+parent frame, so a wide request still fits.
 The frame is sized in pixels from the rendered content, so a row taller than the
 canonical line (a large clock, an icon) is never cut, and a trailing blank row
 left by the renderer is trimmed before measuring.  The panel re-fits when the
@@ -322,8 +309,8 @@ so `etaf-ui` Components match the user's light or dark theme without the caller
 repeating colors.  `etaf-posframe-show` applies it by default as a reactive
 Theme: loading another theme re-derives the palette and restyles every live
 panel through `enable-theme-functions`, and the panel re-fits its height for the
-new faces.  `:theme-mode` pins a panel instead: `'light` or `'dark` keeps the
-panel on that palette whoever the Emacs theme is (the frame's accent still
+new faces.  `:theme 'light` or `:theme 'dark` pins a panel instead: it keeps
+that palette whoever the Emacs theme is (the frame's accent still
 follows), while the default `'auto` follows the frame.  Every palette carries
 `:ui-mode` (`light` or `dark`), so a View that owns its own light and dark
 palettes can read the panel's mode instead of the frame's `background-mode`.  The header line is a
@@ -355,7 +342,8 @@ context that provides the Theme.
 - The View function returns nil: `etaf-posframe-error`.
 - The View does not mount: the buffer and frame are deleted and the error is
   re-signaled.
-- `:on-close` errors are reported in the echo area and do not block teardown.
+- An application `:on-stop` error is reported in the echo area and does not
+  block teardown.
 
 ## Example
 

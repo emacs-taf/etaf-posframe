@@ -111,9 +111,9 @@
    "purpose": "A :cell pair places the panel at the same character cell regardless of the panel size."
   },
   {
-   "name": "etaf-posframe-rejects-a-bad-cell",
+   "name": "etaf-posframe-rejects-a-bad-placement",
    "file": "tests/etaf-posframe-tests.el",
-   "purpose": "A :cell that is not a pair of non-negative integers signals etaf-posframe-error naming the option."
+   "purpose": "A placement that is not an anchor, a tagged pair or a function signals etaf-posframe-error naming the option."
   },
   {
    "name": "etaf-posframe-panel-opened-in-a-panel-is-independent",
@@ -166,14 +166,9 @@
    "purpose": "A row budget taller than the parent frame is clamped so the panel stays on screen."
   },
   {
-   "name": "etaf-posframe-offset-shifts-an-anchor",
+   "name": "etaf-posframe-anchor-offset-shifts-the-anchor",
    "file": "tests/etaf-posframe-tests.el",
-   "purpose": "An offset shifts the panel by exactly its row and column count in character cells from the anchor."
-  },
-  {
-   "name": "etaf-posframe-rejects-a-bad-offset",
-   "file": "tests/etaf-posframe-tests.el",
-   "purpose": "An offset that is not an integer pair or a function signals etaf-posframe-error naming the option."
+   "purpose": "An (ANCHOR ROWS COLS) placement shifts the panel by exactly its character offset."
   },
   {
    "name": "etaf-posframe-hover-focuses-a-panel",
@@ -209,6 +204,21 @@
    "name": "etaf-posframe-provides-the-panel-appearance",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A View inside a panel reads the panel's light or dark appearance through etaf-appearance."
+  },
+  {
+   "name": "etaf-posframe-fraction-size-follows-the-frame",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A (fraction 0.5) width takes about half of the parent frame's pixel width."
+  },
+  {
+   "name": "etaf-posframe-focus-on-open-controls-the-first-selection",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A focusable panel selects itself on open only when :focus-on-open asks."
+  },
+  {
+   "name": "etaf-posframe-keep-alive-resumes-the-session",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A :keep-alive app hides and resumes the same session, and quitting calls :on-stop once."
   }
  ]
 }
