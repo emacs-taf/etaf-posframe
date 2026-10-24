@@ -31,6 +31,12 @@
 
 ### Fixed
 
+- A panel keeps its rows on one line each while a drag narrows its frame: the
+  frame shows the previous canvas clipped at the new edge instead of wrapping
+  it, so a board no longer scrambles for the moment before the View re-lays
+  out.  Posframe writes `truncate-lines` from its own keyword, so the panel now
+  passes `:lines-truncate`.
+
 - A panel pinned with `:theme light` or `dark` now starts a content that owns
   its palette in that mode.  The pin used to reach only the panel's own frame
   and title bar, so an application such as the NetEase player kept painting its

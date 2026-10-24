@@ -57,6 +57,11 @@
    "purpose": "`:resizable nil' puts the frame back to the size the panel allows after an outside resize."
   },
   {
+   "name": "etaf-posframe-a-narrower-frame-clips-instead-of-wrapping",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A narrower frame keeps each canvas row on one line, so a panel clips what it cannot show instead of wrapping it."
+  },
+  {
    "name": "etaf-posframe-resizable-list-limits-the-axes",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A :resizable side list accepts the axes it names and restores the others."

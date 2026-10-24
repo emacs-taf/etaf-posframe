@@ -1147,6 +1147,10 @@ MODE adds the title-bar theme toggle over `etaf-posframe--theme-modes', as in
            :min-height (+ 1 (if title 1 0))
            :left-fringe 0
            :right-fringe 0
+           ;; A frame mid-drag is narrower than the canvas it still shows.
+           ;; Posframe writes `truncate-lines' from this key, so without it
+           ;; the old rows wrap and the board scrambles until the fit runs.
+           :lines-truncate t
            :border-width (or (plist-get border :width)
                              etaf-posframe-border-width)
            :border-color (or (plist-get border :color)

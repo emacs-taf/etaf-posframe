@@ -250,6 +250,33 @@ content's mode cell."
                            (frame-position (etaf-posframe-panel-frame panel))))))
       (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
 
+(ert-deftest etaf-posframe-a-narrower-frame-clips-instead-of-wrapping ()
+  "A frame made narrower clips the canvas rows instead of wrapping them.
+Posframe writes `truncate-lines' from its own keyword, so a panel that does not
+ask for truncation wraps its old, wider rows as soon as a drag narrows the
+frame, and a board scrambles until the fit catches up."
+  (skip-unless (display-graphic-p))
+  (let* ((panel (etaf-posframe-show (etaf-view (text "panel"))
+                                    :key 'clip :width 24 :height 8
+                                    :at 'frame-top-right))
+         (window nil)
+         (buffer nil))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (setq window (etaf-posframe-test--window panel)
+                buffer (window-buffer window))
+          (should (buffer-local-value 'truncate-lines buffer))
+          ;; A drag narrows the frame before the View re-lays out, so the
+          ;; frame shows wider rows than it can hold for one moment.
+          (set-frame-size (window-frame window)
+                          (- (window-body-width window t)
+                             (* 8 (frame-char-width (window-frame window))))
+                          (window-pixel-height window) t)
+          (should (buffer-local-value 'truncate-lines buffer))
+          (etaf-posframe-test--settle 0.3))
+      (when (etaf-posframe-live-p panel) (etaf-posframe-hide panel)))))
+
 (ert-deftest etaf-posframe-resizable-list-limits-the-axes ()
   "A side list allows the axes it names and restores the others."
   (skip-unless (display-graphic-p))
