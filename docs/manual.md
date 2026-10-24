@@ -240,6 +240,11 @@ in one plist; the border is painted outside the text area, so the content width
 stays exact.  Clicking a panel focuses it and the border follows the selection,
 so the hint always matches where the keyboard goes.
 
+A panel does not enable buffer-level `track-mouse`: Emacs then selects the frame
+under the pointer whenever it moves, so leaving a panel would take the keyboard
+with the pointer.  The hover border reads the pointer from a 0.2 s timer
+instead, and a click remains the only thing that moves the keyboard.
+
 `etaf-posframe-focus-follows-mouse` (default nil) additionally focuses the panel
 under the pointer.  Emacs reports the child frame under the pointer through
 `mouse-pixel-position`, so the reading is exact; it is off by default because a

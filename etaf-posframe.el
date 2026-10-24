@@ -196,6 +196,11 @@
 ;; the focused border and a click does not change it.  Default nil; only panels
 ;; that accept the keyboard are focused.  The hover border needs no option:
 ;; the panel under the pointer paints its border accent and keeps the keyboard.
+;;
+;; A panel never enables `track-mouse': Emacs then selects the frame under the
+;; pointer whenever it moves, so leaving a panel would take the keyboard with
+;; the pointer.  The hover border reads the pointer from a timer instead, and
+;; only a click moves the keyboard.
 ;;;;
 ;; Variable: etaf-posframe-panel-keys
 ;; Keymap that is always active while a focusable panel has focus.  It closes
@@ -903,10 +908,11 @@ start at zero, so (0 . 0) is its first cell."
       (setq-local cursor-type nil)
       (setq-local vertical-scroll-bar nil)
       (setq-local horizontal-scroll-bar nil)
-      ;; The surface reports pointer motion itself: a buffer without mouse
-      ;; tracking runs no command when the pointer enters, so the hover border
-      ;; of a View that paints no hover feedback would never appear.
-      (setq-local track-mouse t))))
+      ;; Mouse tracking in the buffer would make Emacs select the frame under
+      ;; the pointer whenever it moves, so leaving a panel would take the
+      ;; keyboard with it.  A panel keeps Emacs' focus rules: only a click moves
+      ;; the keyboard.  The hover border reads the pointer from a timer instead.
+      (setq-local track-mouse nil))))
 
 (defun etaf-posframe--placement-poshandler (placement options)
   "Return the poshandler for PLACEMENT with OPTIONS."

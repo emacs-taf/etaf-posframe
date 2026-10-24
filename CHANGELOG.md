@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A panel no longer enables buffer-level `track-mouse`.  Enabling it made Emacs
+  select the frame under the pointer whenever the pointer moved, so moving the
+  pointer off a focused panel moved the keyboard to the frame behind it.  The
+  hover border still follows the pointer through its 0.2 s reading, and a click
+  remains the only pointer action that moves the keyboard.
+
 ### Changed
 
 - The panel vocabulary now has one option per concept.  Renames and merges:
