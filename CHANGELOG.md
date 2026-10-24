@@ -17,6 +17,12 @@
   that leaves `background-mode` stale is read correctly, and a filled accent
   takes black or white ink by its luminance instead of by the palette's mode.
 
+### Changed
+
+- The user documentation moved into the ETAF Reference Manual: the Floating
+  Panels and Panel Applications chapters replace `docs/manual.md`, which this
+  repository no longer keeps.  The README and the entry Commentary point there.
+
 ### Removed
 
 - The Pomodoro example panel moved to its own application package,

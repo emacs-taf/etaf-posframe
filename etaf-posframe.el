@@ -26,7 +26,8 @@
 ;; Load this package with (require 'etaf-posframe) after adding this repository,
 ;; ETAF and Posframe roots to `load-path'.  Only the interfaces listed below are
 ;; supported for use by other packages; unlisted symbols are internal even
-;; without a double hyphen.
+;; without a double hyphen.  The ETAF Reference Manual holds the workflows, in
+;; its Floating Panels and Panel Applications chapters.
 ;;
 ;; Function: etaf-posframe-show (view &rest options)
 ;;;###autoload (autoload 'etaf-posframe-show "etaf-posframe" nil t)
@@ -218,6 +219,11 @@
 ;; the pointer.  The hover border reads the pointer from a timer instead, and
 ;; only a click moves the keyboard.
 ;;;;
+;; Variable: etaf-posframe-app-repeat-delay
+;; Seconds during which a repeated app toggle is ignored, 0.3 by default.
+;; Opening a panel mounts a whole application, so key repeat would otherwise
+;; mount it once per repeat and stall Emacs.
+;;
 ;; Variable: etaf-posframe-panel-keys
 ;; Keymap that is always active while a focusable panel has focus.  It closes
 ;; the panel on `q', `ESC' and `C-g' and outranks the View's own keys only for

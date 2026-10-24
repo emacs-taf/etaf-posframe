@@ -25,8 +25,11 @@ A panel is passive by default: it takes no keyboard focus and hides as soon as
 the user works elsewhere.  `:focusable t` gives it the keyboard and
 `:focus-on-open` decides whether it is selected on open; `:auto-hide nil` keeps
 it until it is closed, `:draggable t` moves it by its title bar, and several
-panels can be open at once.  The [manual](docs/manual.md) documents
-the options, lifecycle, failures and the Theme contract.
+panels can be open at once.  The user documentation — the options, the
+lifecycle, the failures and the Theme contract — is the
+[Floating Panels](https://github.com/emacs-taf/etaf-manual/blob/main/book/en/posframe-panels.md)
+and [Panel Applications](https://github.com/emacs-taf/etaf-manual/blob/main/book/en/posframe-applications.md)
+chapters of the ETAF Reference Manual.
 
 The [symbol card](examples/etaf-symbol-card.el) example uses the catalog from
 `etaf-ui` and answers "what is this symbol, how is it called here, where do I go
