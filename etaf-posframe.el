@@ -129,7 +129,9 @@
 ;;               anchor, stacked, the default size, focused on open.
 ;;
 ;; Registering the same ID again replaces its record and its shortcut.  A closed
-;; panel leaves nothing running unless `:keep-alive' is set.
+;; panel leaves nothing running unless `:keep-alive' is set.  Registration checks
+;; ID, `:create' and `:view'; the remaining values are used and checked when the
+;; panel opens, so an invalid panel option signals from `etaf-posframe-app'.
 ;;
 ;; Function: etaf-posframe-app-quit (id)
 ;;;###autoload (autoload 'etaf-posframe-app-quit "etaf-posframe" nil t)
@@ -198,6 +200,20 @@
 ;; the focused border and a click does not change it.  Default nil; only panels
 ;; that accept the keyboard are focused.  The hover border needs no option:
 ;; the panel under the pointer paints its border accent and keeps the keyboard.
+;;
+;; Variable: etaf-posframe-dark-surface
+;; Neutral near-black a dark panel surface sinks toward, `#101214' by default.
+;; Dark applications paint a flat near-black surface, so sinking the panel by
+;; `etaf-posframe-dark-shade' keeps it in that family instead of lifting the
+;; theme colour into a grey card.
+;;
+;; Variable: etaf-posframe-dark-shade
+;; How far a dark panel surface sinks toward `etaf-posframe-dark-surface', 0 to
+;; 1, 0.5 by default.
+;;
+;; Variable: etaf-posframe-surface-lift
+;; How far a light panel surface sinks toward black, 0 to 0.5, 0.03 by default.
+;; A light panel keeps a faint grey so it still reads as a surface.
 ;;
 ;; Variable: etaf-posframe-border-width
 ;; Frame border width in pixels, 0..19, used when `:border' has no `:width'.
