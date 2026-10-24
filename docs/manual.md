@@ -58,8 +58,10 @@ Pass the session in from outside: a View built inside the render may not create
 refs, so `etaf-ncm-view` must receive the session `etaf-ncm-create` returned.
 `:height` is the row budget such an app lays out for, `:width` is its column
 budget, and `:focusable t` is what gives it the keyboard; a passive panel never
-sees the app's keys.  The app scrolls its own lists inside the budget, so a
-taller panel shows more rows instead of growing the frame.
+sees the app's keys.  A click anywhere in a panel raises it above the other
+panels; a passive one is raised without taking the keyboard.  The app scrolls
+its own lists inside the budget, so a taller panel shows more rows instead of
+growing the frame.
 
 Keep one session and ignore a repeat within a fraction of a second when a
 command owns the panel.  Mounting an application is expensive, so a session per
@@ -102,7 +104,7 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:header` | Header line text.  Without it the panel has no header line and cannot be dragged. |
 | `:draggable` | Move the panel by dragging the header.  Defaults to `:pinned`. |
 | `:pinned` | Keep the panel open regardless of `:dismiss`. |
-| `:focusable` | Give the child frame keyboard focus, so the View's `:keys`, text inputs and buttons work. |
+| `:focusable` | Give the child frame keyboard focus, so the View's `:keys`, text inputs and buttons work.  Any click raises the panel, focusable or not. |
 | `:auto-focus` | Select the panel on open so its keys work without a click.  Defaults to `:focusable`; nil leaves it unfocused until clicked. |
 | `:dismiss` | `'auto` (default) hides before the next command outside the panel, `'focus-out` hides when focus leaves, nil keeps it. |
 | `:timeout` | Seconds after which the panel hides by itself. |
@@ -114,7 +116,6 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:stack` | With an anchor `:at`, place the panel clear of the panels already there, one gap below (or above, for a `bottom-*` anchor). |
 | `:fill` | Keep the frame at `:height` rows instead of shrinking to the content, so an application with a fixed-size board gets the stage it asked for. |
 | `:offset` | `(ROWS . COLUMNS)` character cells to shift whatever `:at`, `:cell` or `:stack` chose; negative rows go up, negative columns go left.  A function is called for the pair. |
-| `:offset` | `(ROWS . COLUMNS)` character cells to shift whatever `:at` or `:cell` chose: negative rows go up, negative columns go left.  A function is called for the pair. |
 
 Unknown keys, non-positive sizes, an unsupported `:dismiss` value and an
 unsupported `:at` signal `etaf-posframe-error` before any frame is created.
