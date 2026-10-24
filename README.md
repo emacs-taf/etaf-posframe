@@ -18,13 +18,14 @@ Graphical frames only; a text terminal has no child frames.
           (text "3 tests failed in parser-tests")))
  :at 'window-top-right
  :width 36
- :timeout 6)
+ :auto-hide 6)
 ```
 
-A panel is passive by default: it takes no keyboard focus and hides before the
-next command outside it.  `:focusable t` gives it the keyboard, `:pinned t`
-keeps it open until it is closed, `:draggable t` moves it by its header line,
-and several panels can be open at once.  The [manual](docs/manual.md) documents
+A panel is passive by default: it takes no keyboard focus and hides as soon as
+the user works elsewhere.  `:focusable t` gives it the keyboard and
+`:focus-on-open` decides whether it is selected on open; `:auto-hide nil` keeps
+it until it is closed, `:draggable t` moves it by its title bar, and several
+panels can be open at once.  The [manual](docs/manual.md) documents
 the options, lifecycle, failures and the Theme contract.
 
 Two examples use the catalog from `etaf-ui`: the

@@ -210,7 +210,7 @@ The card is passive: it does not take focus and the next command hides it."
    :key 'symbol-card
    :width etaf-symbol-card--width
    :at 'point
-   :dismiss 'auto))
+   :auto-hide t))
 
 ;;;###autoload
 (define-minor-mode etaf-symbol-card-mode

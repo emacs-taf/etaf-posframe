@@ -100,6 +100,11 @@
 
 (defun etaf-pomodoro--tick ()
   "Advance the countdown by one second while running."
+  ;; The panel can be closed by its own keys; the tick is the only running
+  ;; timer, so it notices the panel is gone and stops itself.
+  (when (and etaf-pomodoro--panel
+             (not (etaf-posframe-live-p etaf-pomodoro--panel)))
+    (etaf-pomodoro--close))
   (when-let* ((state etaf-pomodoro--state))
     (let ((running (plist-get state :running))
           (remaining (plist-get state :remaining)))
@@ -255,11 +260,9 @@
    :key 'pomodoro
    :at (or position 'frame-top-right)
    :width (or width etaf-pomodoro--width)
-   :header "≡ 番茄钟"
+   :title "≡ 番茄钟"
    :draggable t
-   :pinned t
-   :focusable t
-   :on-close #'etaf-pomodoro--close))
+   :focusable t))
 
 (defun etaf-pomodoro--remount (style)
   "Remount the panel in STYLE at its current position.
