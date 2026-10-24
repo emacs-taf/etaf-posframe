@@ -36,6 +36,11 @@
              ":at"
              (error-message-string
               (should-error (etaf-posframe-show view :at 'nowhere)
+                            :type 'etaf-posframe-error))))
+    (should (string-match-p
+             "theme-mode"
+             (error-message-string
+              (should-error (etaf-posframe-show view :theme-mode 'sepia)
                             :type 'etaf-posframe-error))))))
 
 (ert-deftest etaf-posframe-theme-returns-frame-colors ()
@@ -172,6 +177,12 @@ follows is answered instead."
   (cl-letf (((symbol-function 'mouse-pixel-position)
              (lambda () (list frame 5 5))))
     (funcall function)))
+
+(defun etaf-posframe-tests--luminance (color)
+  "Return the relative luminance of COLOR."
+  (apply #'+ (cl-mapcar (lambda (weight channel) (* weight channel))
+                        '(0.2126 0.7152 0.0722)
+                        (color-name-to-rgb color))))
 
 (ert-deftest etaf-posframe-frame-is-as-wide-as-the-canvas ()
   "A panel frame is exactly as wide as its content columns.
@@ -792,6 +803,49 @@ would offer the panel as a target instead of the application behind it."
           (should (eq (selected-frame) origin)))
       (ignore-errors (etaf-posframe-hide panel))
       (ignore-errors (etaf-posframe-hide passive))
+      (ignore-errors (select-frame-set-input-focus origin)))))
+
+(ert-deftest etaf-posframe-theme-pins-a-mode ()
+  "A pinned Theme keeps its mode whatever the Emacs theme is."
+  (let* ((dark (etaf-posframe-theme nil 'dark))
+         (light (etaf-posframe-theme nil 'light))
+         (mode (frame-parameter nil 'background-mode)))
+    (unwind-protect
+        (progn
+          (should (< (etaf-posframe-tests--luminance (plist-get dark :ui-bg))
+                     (etaf-posframe-tests--luminance (plist-get light :ui-bg))))
+          ;; The Emacs theme does not move a pinned panel.
+          (set-frame-parameter nil 'background-mode 'light)
+          (should (equal (plist-get dark :ui-bg)
+                         (plist-get (etaf-posframe-theme nil 'dark) :ui-bg)))
+          (set-frame-parameter nil 'background-mode 'dark)
+          (should (equal (plist-get light :ui-bg)
+                         (plist-get (etaf-posframe-theme nil 'light) :ui-bg))))
+      (set-frame-parameter nil 'background-mode mode))))
+
+(ert-deftest etaf-posframe-hover-is-dimmer-than-focus ()
+  "A hovered panel takes half the accent, so only focus paints it fully."
+  (skip-unless (display-graphic-p))
+  (let* ((origin (etaf-posframe-tests--top-frame))
+         (panel (etaf-posframe-show (etaf-view (text "tone"))
+                                    :key 'hover-tone :width 24 :height 2
+                                    :pinned t :focusable t))
+         (frame (etaf-posframe-panel-frame panel)))
+    (unwind-protect
+        (progn
+          (should (eq (selected-frame) frame))
+          (let ((focus (face-attribute 'child-frame-border :background frame)))
+            (select-frame origin)
+            (etaf-posframe-tests--with-pointer-on
+             origin (lambda () (run-hooks 'post-command-hook)))
+            (let ((resting (face-attribute 'child-frame-border :background frame)))
+              (should-not (equal resting focus))
+              (etaf-posframe-tests--with-pointer-on
+               frame (lambda () (run-hooks 'post-command-hook)))
+              (let ((hover (face-attribute 'child-frame-border :background frame)))
+                (should-not (equal hover focus))
+                (should-not (equal hover resting))))))
+      (etaf-posframe-hide panel)
       (ignore-errors (select-frame-set-input-focus origin)))))
 
 (provide 'etaf-posframe-tests)

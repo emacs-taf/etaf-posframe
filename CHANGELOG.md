@@ -15,6 +15,15 @@
 the clicked child frame but leaves the stacking order alone, so a panel behind
 another stayed covered even while it held the keyboard; only an explicit raise
 puts it in front.
+- The hover border is the resting border mixed half-way to the accent, and a
+focused panel paints the full accent, so hovering hints and clicking commits
+instead of looking focused before the click.
+- `:theme-mode` pins a panel (or a registered application) to `light` or `dark`:
+the panel keeps that palette when the Emacs theme changes.  The default `auto`
+follows the Emacs theme as before.  The palette carries `:ui-mode`, so a View
+with its own light and dark palettes can follow the panel's mode.
+- The title bar sits on its own surface, lifted toward the foreground, so it
+reads as chrome instead of merging into the panel body.
 - `etaf-posframe-focus-follows-mouse` focuses the panel under the pointer.  It
   defaults to nil, so a resting pointer does not move the keyboard away from
   another window.

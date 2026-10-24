@@ -69,6 +69,10 @@
 ;;   :timeout    Seconds after which the panel hides by itself.
 ;;   :theme      ETAF UI Theme plist; defaults to `etaf-posframe-theme' for the
 ;;               current frame, so catalog Components match the user's frame.
+;;   :theme-mode 'auto (default), `light' or `dark'.  `auto' follows the Emacs
+;;               theme; light and dark pin the panel to that palette whoever
+;;               the Emacs theme is, which is what a board with fixed colours
+;;               asks for.  Ignored when `:theme' is given.
 ;;   :border-width  Border around the frame in pixels, default
 ;;               `etaf-posframe-border-width' (1); 0 draws none.
 ;;   :border-color  Border colour, default the Theme's panel border, so the
@@ -76,8 +80,8 @@
 ;;   :focus-border-color  Border colour while the panel holds the keyboard;
 ;;               default the Theme's accent.
 ;;   :hover-border-color  Border colour while the mouse pointer is over the
-;;               panel; default `:focus-border-color'.  Hover and focus paint
-;;               the same accent, so clicking a hovered panel changes nothing.
+;;               panel; default the focus colour at 45% over the panel surface,
+;;               so hovering hints and clicking commits.
 ;;   :offset     (ROWS . COLUMNS) character cells to shift whatever `:at' or
 ;;               `:cell' chose, so a panel can start from an anchor and move.
 ;;               Negative rows go up, negative columns go left.  A function is
@@ -137,6 +141,8 @@
 ;;   :stack      Stack below the panels already there, default t.
 ;;   :header     Header text; default `:title'.
 ;;   :focusable  Give the panel the keyboard, default t.
+;;   :theme-mode 'auto (default), `light' or `dark'; the registered app keeps
+;;               that palette when the Emacs theme changes.
 ;;   :key        A key string that `etaf-posframe-app-map' binds to this app.
 ;;   :fill       Keep the frame at `:height' rows instead of shrinking to the
 ;;               content, which is what a game board wants.
@@ -185,10 +191,12 @@
 ;; Function: etaf-posframe-panels ()
 ;; Return the live panels, most recent first.
 ;;
-;; Function: etaf-posframe-theme (&optional frame)
+;; Function: etaf-posframe-theme (&optional frame mode)
 ;; Return an ETAF UI Theme plist derived from FRAME's default face.
-;; Pass it to `etaf-theme-provide' in a Component `:setup' when a panel builds
-;; its own boundary.  Panels created by `etaf-posframe-show' already provide it.
+;; MODE `light' or `dark' pins the palette to that mode instead; nil follows
+;; FRAME.  Pass it to `etaf-theme-provide' in a Component `:setup' when a panel
+;; builds its own boundary.  Panels created by `etaf-posframe-show' already
+;; provide it.
 ;;
 ;; Variable: etaf-posframe-default-width
 ;; Columns of a new panel when `:width' is absent.
@@ -410,18 +418,34 @@ It is looked up from the panel buffer, so the panel struct stays printable."
            (append (cl-mapcar (lambda (a b) (+ a (* (- b a) amount))) start end)
                    '(2)))))
 
-(defun etaf-posframe-theme (&optional frame)
-  "Return an ETAF UI Theme plist derived from FRAME's default face.
-FRAME defaults to the selected frame.  Every value is an #RRGGBB color, so the
-result is a literal token plist accepted by `etaf-theme-provide'."
+(defconst etaf-posframe--light-base '("#F7F8FA" . "#1F2328")
+  "Background and foreground of a panel pinned to the light mode.")
+
+(defconst etaf-posframe--dark-base '("#16191D" . "#D8DEE6")
+  "Background and foreground of a panel pinned to the dark mode.")
+
+(defun etaf-posframe-theme (&optional frame mode)
+  "Return an ETAF UI Theme plist for FRAME, pinned to MODE when given.
+MODE is `light' or `dark' to keep the panel on that mode whoever the Emacs
+theme is, which is what a game with a fixed board needs; nil derives the mode
+from FRAME.  A pinned panel keeps the frame's accent, so its controls still
+follow the user's palette.  Every value is an #RRGGBB color, so the result is a
+literal token plist accepted by `etaf-theme-provide'."
   (let* ((frame (or frame (selected-frame)))
-         (bg (or (etaf-posframe--color
-                  (face-attribute 'default :background nil frame))
-                 "#FFFFFF"))
-         (fg (or (etaf-posframe--color
-                  (face-attribute 'default :foreground nil frame))
-                 "#000000"))
-         (dark (eq (frame-parameter frame 'background-mode) 'dark))
+         (pinned (memq mode '(light dark)))
+         (base (if pinned
+                   (if (eq mode 'dark) etaf-posframe--dark-base
+                     etaf-posframe--light-base)
+                 (cons (or (etaf-posframe--color
+                            (face-attribute 'default :background nil frame))
+                           "#FFFFFF")
+                       (or (etaf-posframe--color
+                            (face-attribute 'default :foreground nil frame))
+                           "#000000"))))
+         (bg (car base))
+         (fg (cdr base))
+         (dark (if pinned (eq mode 'dark)
+                 (eq (frame-parameter frame 'background-mode) 'dark)))
          ;; The panel must read as a surface above the buffer, not blend
          ;; into it: lift it clearly in dark themes and drop it in light ones.
          (panel (if dark
@@ -438,7 +462,8 @@ result is a literal token plist accepted by `etaf-theme-provide'."
                      (if dark "#6CB6FF" "#2F6FE4")))
          (tint (lambda (color amount)
                  (etaf-posframe--mix panel color amount))))
-    (list :ui-bg bg
+    (list :ui-mode (if dark 'dark 'light)
+          :ui-bg bg
           :ui-fg fg
           :ui-muted-fg muted
           :ui-border border
@@ -496,8 +521,9 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
 
 (defconst etaf-posframe--option-keys
   '(:at :cell :stack :width :height :header :draggable :pinned :focusable
-    :auto-focus :dismiss :timeout :theme :on-close :key :border-width
-    :border-color :focus-border-color :hover-border-color :fill :offset)
+    :auto-focus :dismiss :timeout :theme :theme-mode :on-close :key
+    :border-width :border-color :focus-border-color :hover-border-color :fill
+    :offset)
   "Options accepted by `etaf-posframe-show'.")
 
 (defun etaf-posframe--validate (options)
@@ -564,6 +590,11 @@ area, and every place is one of `etaf-posframe--anchor-places'.  `point' and
            (unless (or (null value) (functionp value))
              (signal 'etaf-posframe-error
                      (list "Panel :on-close must be a function" value))))
+          (:theme-mode
+           (unless (memq value '(auto light dark))
+             (signal 'etaf-posframe-error
+                     (list (format "Panel :theme-mode must be auto, light or dark: %S"
+                                   value)))))
           (:theme
            (unless (or (null value) (proper-list-p value)
                        (etaf-ref-p value) (etaf-computed-p value))
@@ -808,9 +839,13 @@ start at zero, so (0 . 0) is its first cell."
   (when header
     (let* ((text (concat " " header))
            (padding (max 0 (- width (string-width text))))
-           (bar (concat text (make-string padding ?\s))))
+           (bar (concat text (make-string padding ?\s)))
+           ;; The title bar reads as chrome, not as part of the surface: a
+           ;; lift toward the foreground separates it in either palette.
+           (surface (etaf-posframe--mix (plist-get theme :ui-panel-bg)
+                                        (plist-get theme :ui-panel-fg) 0.07)))
       (propertize bar
-                  'face (list :background (plist-get theme :ui-panel-bg)
+                  'face (list :background surface
                               :foreground (plist-get theme :ui-panel-fg)
                               :weight 'bold
                               :height 1.0
@@ -1016,11 +1051,19 @@ a panel and then clicking it changes nothing on screen."
            (options (etaf-posframe--panel-options panel))
            (accent (if (memq :focus-border-color options)
                        (plist-get options :focus-border-color)
-                     (plist-get palette :ui-accent))))
+                     (plist-get palette :ui-accent)))
+           (resting (or (plist-get options :border-color)
+                        (plist-get palette :ui-panel-border))))
       (cond (focused accent)
-            (hovered (or (plist-get options :hover-border-color) accent))
-            (t (or (plist-get options :border-color)
-                   (plist-get palette :ui-panel-border)))))))
+            ;; A hovered panel does not hold the keyboard, so it takes the
+            ;; accent diluted into the surface: the border brightens into the
+            ;; full accent when the click lands, instead of looking focused
+            ;; before it.
+            (hovered (or (plist-get options :hover-border-color)
+                         (etaf-posframe--mix (or (plist-get palette :ui-panel-bg)
+                                                 resting)
+                                             accent 0.45)))
+            (t resting)))))
 
 (defun etaf-posframe--paint-border (panel)
   "Colour PANEL's border by whether it holds the focus or the pointer."
@@ -1248,7 +1291,10 @@ panel was hidden."
           (parent-frame (etaf-posframe--panel-parent-frame panel)))
       (when (and (etaf-ref-p theme) (frame-live-p parent-frame))
         (ignore-errors
-          (let* ((palette (etaf-posframe-theme parent-frame))
+          (let* ((palette (etaf-posframe-theme
+                           parent-frame
+                           (plist-get (etaf-posframe--panel-options panel)
+                                      :theme-mode)))
                  (frame (etaf-posframe--panel-frame panel)))
             (etaf-batch (setf (etaf-value theme) palette))
             (when (frame-live-p frame)
@@ -1340,7 +1386,8 @@ described in the package Commentary."
                               etaf-posframe-default-max-height)
                           capacity))
          (theme (or (plist-get options :theme)
-                    (etaf-posframe-theme parent-frame)))
+                    (etaf-posframe-theme parent-frame
+                                         (plist-get options :theme-mode))))
          (theme-ref (if (or (etaf-ref-p theme) (etaf-computed-p theme))
                         theme
                       (etaf-ref theme)))
@@ -1611,7 +1658,8 @@ it once per repeat and stall Emacs."
 
 (defconst etaf-posframe--app-options
   '(:at :stack :width :height :header :focusable :auto-focus :dismiss :timeout
-    :theme :border-width :border-color :focus-border-color :fill :offset)
+    :theme :theme-mode :border-width :border-color :focus-border-color :fill
+    :offset)
   "Registration keys handed to `etaf-posframe-show' unchanged.")
 
 (defun etaf-posframe--app-show-options (record)

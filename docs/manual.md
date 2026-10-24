@@ -109,6 +109,7 @@ and 0.22 s with 28 MB and a single mount with it.
 | `:dismiss` | `'auto` (default) hides before the next command outside the panel, `'focus-out` hides when focus leaves, nil keeps it. |
 | `:timeout` | Seconds after which the panel hides by itself. |
 | `:theme` | ETAF UI Theme plist; defaults to `etaf-posframe-theme` for the current frame. |
+| `:theme-mode` | `'auto` (default) follows the Emacs theme; `'light` or `'dark` pins the panel to that palette. |
 | `:on-close` | Function called with the panel after it is hidden. |
 | `:key` | Identity of the panel.  A show with a live key replaces that panel; different keys, or no key, coexist. |
 | `:border-width` | Border around the frame in pixels, default `etaf-posframe-border-width` (1).  `0` draws none. |
@@ -321,9 +322,14 @@ so `etaf-ui` Components match the user's light or dark theme without the caller
 repeating colors.  `etaf-posframe-show` applies it by default as a reactive
 Theme: loading another theme re-derives the palette and restyles every live
 panel through `enable-theme-functions`, and the panel re-fits its height for the
-new faces.  The header line is a full-width title bar painted with the same
-surface and border colors as the panel; it keeps those colors and fills every
-column even when the frame's own `header-line` face is inverted.
+new faces.  `:theme-mode` pins a panel instead: `'light` or `'dark` keeps the
+panel on that palette whoever the Emacs theme is (the frame's accent still
+follows), while the default `'auto` follows the frame.  Every palette carries
+`:ui-mode` (`light` or `dark`), so a View that owns its own light and dark
+palettes can read the panel's mode instead of the frame's `background-mode`.  The header line is a
+full-width title bar: a surface lifted 7% toward the foreground separates it
+from the panel body, and it keeps the panel's colors and fills every column
+even when the frame's own `header-line` face is inverted.
 
 A panel that builds its own themed boundary must pass the View as a component
 property and render it inside the component, not through the default slot:

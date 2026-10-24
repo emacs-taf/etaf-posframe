@@ -194,6 +194,16 @@
    "name": "etaf-posframe-click-selects-a-panel",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A mouse button anywhere in a panel raises it and gives it the keyboard, while a passive panel never takes the focus from a click."
+  },
+  {
+   "name": "etaf-posframe-theme-pins-a-mode",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A Theme pinned to light or dark keeps that palette when the Emacs frame mode changes."
+  },
+  {
+   "name": "etaf-posframe-hover-is-dimmer-than-focus",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A hovered border takes half the accent while the focused border paints it fully."
   }
  ]
 }
