@@ -36,6 +36,106 @@ The [symbol card](examples/etaf-symbol-card.el) example uses the catalog from
 next" in one keypress.  A pinned, draggable timer with three styles lives in its
 own package, [etaf-pomodoro](https://github.com/emacs-taf/etaf-pomodoro).
 
+## Applications as panels
+
+`etaf-posframe-register-app` turns a whole ETAF application into a floating
+panel, so each one opens with a single key instead of a command of its own.
+This registry is a working setup: a player that keeps playing after its panel
+closes, readers stacked at the top right, and games centred on a fixed board.
+
+```elisp
+(require 'etaf-posframe)
+
+;; :create runs on every open and returns a fresh session (account, list,
+;; timer); :view renders that session.  Both are plain functions, so an
+;; application that ships xxx-create needs no glue, and one that first wants a
+;; file prompt gets a small factory.
+(defun my/etaf-md-preview-session ()
+  (etaf-md-preview-create :file (read-file-name "Markdown: ")))
+
+(defun my/etaf-manual-session ()
+  "Open the manual where the reader stopped last time."
+  (let ((session (etaf-manual-reader-create)))
+    (etaf-manual-reader-restore session)
+    session))
+
+(defun my/etaf-rss-session ()
+  (etaf-rss-create :client 'miniflux))
+
+(defconst my/etaf-panel-apps
+  '((ncm        :title "Music"        :create etaf-ncm-create     :view etaf-ncm-view
+                :width 40 :height 17 :shortcut "m" :at frame-top-right :stack t
+                :draggable t :keep-alive t
+                :on-stop (lambda (session)
+                           (ignore-errors (etaf-ncm-stop session))))
+    (pomodoro   :title "Pomodoro"     :create etaf-pomodoro-create :view etaf-pomodoro-view
+                :width 40 :shortcut "p" :at frame-top-right :stack t
+                :focusable t :draggable t)
+    (weread     :title "WeRead"       :create etaf-weread-create :view etaf-weread-view
+                :width 100 :height 24 :shortcut "w" :at frame-top-right :stack t)
+    (md-preview :title "Markdown"     :create my/etaf-md-preview-session :view etaf-md-preview-view
+                :width 110 :height 26 :shortcut "d" :at frame-top-right :stack t)
+    (manual     :title "ETAF Manual"  :create my/etaf-manual-session :view etaf-manual-reader-view
+                :keep-alive t :width 180 :height 40 :shortcut "h" :at frame-center :stack t)
+    (desktop    :title "Desktop"      :create etaf-desktop-create :view etaf-desktop-view
+                :width (fraction 0.9) :height (fraction 0.9)
+                :shortcut "D" :at frame-center :stack t)
+    (rss        :title "RSS"          :create my/etaf-rss-session :view etaf-rss-view
+                :width 100 :height 24 :shortcut "r" :at frame-top-right :stack t)
+    (youtube    :title "YouTube"      :create etaf-youtube-create :view etaf-youtube-view
+                :width 100 :height 24 :shortcut "y" :at frame-top-right :stack t)
+    ;; Games: centred, large, not stacked against a reader.
+    (solitaire  :title "Solitaire"    :create etaf-solitaire-create :view etaf-solitaire-view
+                :width 50 :height 35 :shortcut "s" :at frame-center :stack nil :fill-height t)
+    (xiangqi    :title "Xiangqi"       :create etaf-xiangqi-create :view etaf-xiangqi-view
+                :resizable nil :width 75 :height 40 :shortcut "x" :at frame-center
+                :stack nil :fill-height t)
+    (tanks      :title "Tanks"        :create etaf-tanks-create   :view etaf-tanks-view
+                :width 126 :height 32 :shortcut "t" :at (frame-center -3 0)
+                :stack nil :fill-height t :draggable t))
+  "One floating panel per ETAF application: (ID REGISTRATION-OPTIONS ...).
+Small always-on panels sit at the top right and queue downward; games take the
+centre, keep their board size and stay out of that column.")
+
+(setq etaf-posframe-border-width 1
+      etaf-posframe-border-hover-strength 0.4
+      etaf-posframe-border-focus-strength 0.7)
+
+(dolist (app my/etaf-panel-apps)
+  (apply #'etaf-posframe-register-app (car app)
+         (append (cdr app)
+                 (list :require (intern (format "etaf-%s" (car app)))))))
+
+;; One prefix for every shortcut above, plus walking between open panels.
+(global-set-key (kbd "C-c e") #'etaf-posframe-app-prefix)
+(define-key etaf-posframe-app-map (kbd "n") #'etaf-posframe-cycle)
+(define-key etaf-posframe-app-map (kbd "q") #'etaf-posframe-app)
+```
+
+The shape of a registration:
+
+- The key of each entry is the application id, so `:require` derives the
+  `etaf-<id>` feature and the application loads on its first open, not at
+  startup.
+- `:create` takes no argument and runs once per open; `:view` receives that
+  session.  Everything the application owns (account, queue, game state) lives
+  in the session, so nothing outlives the panel unless `:keep-alive` is set.
+- `:keep-alive t` hides the panel on close and keeps the session, so music
+  keeps playing and a game pauses instead of restarting.  `:on-stop` runs with
+  the session when `etaf-posframe-app-quit` really stops it.
+- `:at frame-top-right` with `:stack t` makes the small panels queue downward
+  without covering each other.  Games use `frame-center` with `:stack nil` and
+  `:fill-height t`, and an `(ANCHOR ROWS COLS)` offset such as
+  `(frame-center -3 0)` lifts a tall board off the minibuffer.
+- `(fraction 0.9)` sizes the desktop panel against the parent frame, so it
+  still opens nearly full-screen on another monitor.
+- `:theme light` (or `dark`) pins a panel whose content declares no palette of
+  its own; leave it out to follow the Emacs theme.
+- `:focusable t` gives the panel the keyboard.  Panels opened by a shortcut are
+  focused on open by default, which is what an application's own keys need.
+- Registering an application rebuilds `etaf-posframe-app-map`, so bind extra
+  keys such as `n` and `q` after the registrations, as above.
+
 The [entry Commentary](etaf-posframe.el) is the supported API inventory.
 Requires Emacs 29.1+, ETAF and Posframe on `load-path`; install from the ETAF
 package archive once released, or add this checkout to `load-path`:
