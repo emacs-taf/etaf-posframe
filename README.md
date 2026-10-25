@@ -84,6 +84,12 @@ closes, readers stacked at the top right, and games centred on a fixed board.
                 :width 100 :height 24 :shortcut "r" :at frame-top-right :stack t)
     (youtube    :title "YouTube"      :create etaf-youtube-create :view etaf-youtube-view
                 :width 100 :height 24 :shortcut "y" :at frame-top-right :stack t)
+    ;; Media and chat: their own palette, so a panel is a window, not a card.
+    (bili       :title "Bilibili"     :create etaf-bili-create    :view etaf-bili-view
+                :width (fraction 0.75) :height (fraction 0.8) :shortcut "B"
+                :at frame-center :stack nil :draggable t)
+    (telega     :title "Telegram"     :create etaf-telega-create  :view etaf-telega-view
+                :width 110 :height 34 :shortcut "g" :at frame-center :stack nil)
     ;; Games: centred, large, not stacked against a reader.
     (solitaire  :title "Solitaire"    :create etaf-solitaire-create :view etaf-solitaire-view
                 :width 50 :height 35 :shortcut "s" :at frame-center :stack nil :fill-height t)
