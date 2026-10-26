@@ -6,7 +6,7 @@ PROVIDERS = -L ../etaf -L ../etaf-ui -L ../ebox -L ../ecss -L ../ekp
 LOAD_PATH = -L . -L tests $(PROVIDERS) $(if $(POSFRAME_DIR),-L $(POSFRAME_DIR))
 SOURCES = etaf-posframe.el examples/etaf-symbol-card.el tests/etaf-posframe-tests.el
 
-.PHONY: all compile load test check clean structure-check setup-hooks acceptance api-check
+.PHONY: all compile load test tty-test check clean structure-check setup-hooks acceptance api-check
 
 all: check
 
@@ -26,6 +26,9 @@ acceptance:
 		python3 scripts/run-acceptance.py --emacs "$(EMACS)"
 
 test: acceptance
+
+tty-test:
+	python3 scripts/run-tty-acceptance.py --emacs "$(EMACS)"
 
 structure-check:
 	python3 scripts/check-repository.py

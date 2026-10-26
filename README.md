@@ -6,7 +6,10 @@ ETAF content can appear next to ordinary editing work: a preview, a status
 board, a detail card or a small form.
 
 Requires Emacs 29.1 or newer, ETAF 0.3 and [Posframe](https://github.com/tumashu/posframe).
-Graphical frames only; a text terminal has no child frames.
+A graphical frame shows a panel with its full border and colours.  A text
+terminal shows one too when Emacs provides the `tty-child-frames` feature
+(Emacs 31 and later): the border takes one terminal cell in the terminal's own
+colours, and `:border` width and colours apply to graphical frames.
 
 ```elisp
 (require 'etaf-posframe)

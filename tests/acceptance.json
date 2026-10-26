@@ -275,6 +275,41 @@
    "name": "etaf-posframe-title-bar-and-the-application-share-one-theme-state",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "A panel whose content declared its surface paints the content's palette and offers its modes, so the application's own switch repaints the panel and a title-bar click writes the application's mode cell."
+  },
+  {
+   "name": "etaf-posframe-tty-shows-a-panel-in-cells",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A terminal panel keeps its column width and content rows on screen, and its buffer holds the rendered View."
+  },
+  {
+   "name": "etaf-posframe-tty-fill-keeps-the-row-budget",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A terminal panel keeps the row budget it asked for, so a terminal's one-pixel cells do not cap it at a small frame."
+  },
+  {
+   "name": "etaf-posframe-tty-title-adds-only-the-header",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "A titled terminal panel is its header plus its content rows, with no empty row below the content."
+  },
+  {
+   "name": "etaf-posframe-tty-stack-leaves-one-cell",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Terminal panels stacked at one anchor stay one cell apart and share the same column."
+  },
+  {
+   "name": "etaf-posframe-tty-anchors-keep-the-border-on-screen",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Every frame anchor keeps a terminal panel and its border cell inside the terminal."
+  },
+  {
+   "name": "etaf-posframe-tty-refit-keeps-a-panel-inside",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Re-placing a terminal panel after a terminal resize leaves the panel and its border on screen."
+  },
+  {
+   "name": "etaf-posframe-tty-hide-releases-the-frame",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Hiding a terminal panel deletes its frame and releases its Runtime."
   }
  ]
 }

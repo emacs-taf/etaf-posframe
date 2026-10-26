@@ -639,8 +639,10 @@ sized from its content."
          (frame-width (frame-pixel-width parent))
          (frame-height (frame-pixel-height parent))
          (edges (window-inside-pixel-edges (selected-window)))
-         (margin 8)
-         (window-margin 4))
+         ;; One character cell against a frame edge, half a cell against a
+         ;; window's text area; a terminal reports one pixel per cell.
+         (margin (frame-char-width parent))
+         (window-margin (max 1 (/ margin 2))))
     (cl-labels ((place (anchor)
                   (etaf-posframe-tests--placement parent 20 2 :at anchor))
                 (at-of (anchor) (plist-get (place anchor) :at))
@@ -1481,6 +1483,140 @@ not one per surface."
                           (point-min) (point-max))))))))
       (etaf-posframe-hide panel)
       (ignore-errors (select-frame origin)))))
+
+;;; Terminal child frames
+
+(defun etaf-posframe-test--tty-p ()
+  "Return non-nil in an interactive terminal with child frames.
+The batch runner has no terminal, so these cases skip there and run under
+`make tty-test', which starts Emacs on a real pty."
+  (and (not noninteractive)
+       (not (display-graphic-p))
+       (featurep 'tty-child-frames)))
+
+(defun etaf-posframe-test--tty-fits-p (panel)
+  "Return non-nil when PANEL, border included, stays inside the terminal."
+  (let* ((frame (etaf-posframe-panel-frame panel))
+         (position (frame-position frame)))
+    (and frame
+         (>= (car position) 1)
+         (>= (cdr position) 1)
+         (<= (+ (car position) (frame-width frame) 1)
+             (frame-pixel-width (frame-parent frame)))
+         (<= (+ (cdr position) (frame-height frame) 1)
+             (frame-pixel-height (frame-parent frame))))))
+
+(ert-deftest etaf-posframe-tty-shows-a-panel-in-cells ()
+  "A terminal panel keeps its column width and content rows on screen."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (column (text "Build finished")
+                                  (text "3 tests failed in parser-tests"))))
+         (panel (etaf-posframe-show view :width 30 :key 'tty-shows :auto-hide nil)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (let ((frame (etaf-posframe-panel-frame panel)))
+            (should (= 30 (frame-width frame)))
+            (should (= 2 (frame-height frame)))
+            (should (etaf-posframe-test--tty-fits-p panel))
+            (should (string-match-p
+                     "Build finished"
+                     (with-current-buffer (window-buffer (frame-root-window frame))
+                       (buffer-substring-no-properties (point-min) (point-max)))))))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-tty-fill-keeps-the-row-budget ()
+  "A terminal panel keeps the rows it asked for, not a pixel margin's worth."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (text "filled")))
+         (panel (etaf-posframe-show view :width 24 :height 10
+                                    :fill-height t :key 'tty-fill :auto-hide nil)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (should (= 10 (frame-height (etaf-posframe-panel-frame panel))))
+          (should (etaf-posframe-test--tty-fits-p panel)))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-tty-title-adds-only-the-header ()
+  "A titled terminal panel height is its header plus its content rows."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (column (text "one") (text "two"))))
+         (panel (etaf-posframe-show view :width 24 :title "Panel"
+                                    :key 'tty-title :auto-hide nil)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (should (= 3 (frame-height (etaf-posframe-panel-frame panel))))
+          (should (etaf-posframe-test--tty-fits-p panel)))
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-tty-stack-leaves-one-cell ()
+  "Terminal panels stacked at one anchor stay one cell apart."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (text "stacked")))
+         (first (etaf-posframe-show view :at 'frame-top-right :stack t
+                                    :key 'tty-stack-a :auto-hide nil :width 24))
+         (second (etaf-posframe-show view :at 'frame-top-right :stack t
+                                     :key 'tty-stack-b :auto-hide nil :width 24)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (let* ((a (etaf-posframe-panel-frame first))
+                 (b (etaf-posframe-panel-frame second))
+                 (gap (- (cdr (frame-position b))
+                         (+ (cdr (frame-position a)) (frame-height a) 2))))
+            (should (= 1 gap))
+            (should (= (car (frame-position a)) (car (frame-position b))))
+            (should (etaf-posframe-test--tty-fits-p first))
+            (should (etaf-posframe-test--tty-fits-p second))))
+      (etaf-posframe-hide first)
+      (etaf-posframe-hide second))))
+
+(ert-deftest etaf-posframe-tty-anchors-keep-the-border-on-screen ()
+  "Every frame anchor keeps a terminal panel and its border inside the frame."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let ((view (etaf-view (text "edge"))))
+    (dolist (at '(frame-top-left frame-top-right frame-bottom-left
+                  frame-bottom-right frame-center))
+      (let ((panel (etaf-posframe-show view :at at :width 24
+                                      :key at :auto-hide nil)))
+        (unwind-protect
+            (progn
+              (etaf-posframe-test--settle 0.1)
+              (should (etaf-posframe-test--tty-fits-p panel)))
+          (etaf-posframe-hide panel))))))
+
+(ert-deftest etaf-posframe-tty-refit-keeps-a-panel-inside ()
+  "A resized terminal frame re-places its panel and its border on screen."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (text "refit")))
+         (parent (selected-frame))
+         (columns (frame-width parent))
+         (rows (frame-height parent))
+         (panel (etaf-posframe-show view :at 'frame-bottom-right :width 24
+                                    :key 'tty-refit :auto-hide nil)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (set-frame-size parent (max 40 (- columns 20)) (max 20 (- rows 10)) t)
+          (etaf-posframe-test--settle 0.3)
+          (should (etaf-posframe-test--tty-fits-p panel)))
+      (set-frame-size parent columns rows t)
+      (etaf-posframe-test--settle 0.2)
+      (etaf-posframe-hide panel))))
+
+(ert-deftest etaf-posframe-tty-hide-releases-the-frame ()
+  "Hiding a terminal panel deletes its frame and its Runtime."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (text "gone")))
+         (panel (etaf-posframe-show view :width 24 :key 'tty-hide :auto-hide nil))
+         (frame (etaf-posframe-panel-frame panel)))
+    (should (frame-live-p frame))
+    (should (etaf-posframe-hide panel))
+    (should-not (etaf-posframe-live-p panel))
+    (should-not (frame-live-p frame))
+    (should-not (etaf-posframe-panels))))
 
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

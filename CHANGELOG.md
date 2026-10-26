@@ -2,7 +2,22 @@
 
 ## Unreleased
 
+## 0.3.0
+
 ### Added
+
+- ETAF panels work on a text terminal that provides Emacs' `tty-child-frames`
+  feature (Emacs 31 and later), so `etaf-posframe-show` no longer refuses a
+  non-graphical display when its terminal has child frames.  Terminal panels
+  keep the same placement, stacking, clipping, filling and focus behaviour as
+  graphical ones, and a terminal resize re-places and re-fits every open panel
+  at new columns and rows.  A terminal draws the frame border in one cell that
+  sits outside the frame size, so anchors, stacking and the row clamp count it;
+  that border takes one cell and the terminal's colours, while `:border` width
+  and colours remain a graphical-frame feature.  `etaf-posframe-hide-inactive`
+  stays a graphical-frame feature because a terminal frame is not listed as a
+  window.  A panel with a title now keeps its frame at header plus content on a
+  terminal instead of one empty row below it.
 
 - `:resizable` decides which outside size changes a panel accepts: `t`
   (default) keeps today's behaviour and follows any edge, `nil` returns the

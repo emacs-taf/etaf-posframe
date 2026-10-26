@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 ETAF contributors
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Author: ETAF contributors
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "29.1") (etaf "0.3.0") (etaf-ui "0.3.0") (posframe "0.9.0"))
 ;; Keywords: frames, ui
 ;; URL: https://github.com/emacs-taf/etaf-posframe
@@ -15,7 +15,11 @@
 ;; This package shows any ETAF View in a floating child frame, so a panel does
 ;; not occupy a window, does not replace the current buffer and does not disturb
 ;; the user's window layout.  It renders with ETAF, sizes the frame from the
-;; rendered content and owns the panel lifecycle.  Graphical frames only.
+;; rendered content and owns the panel lifecycle.  A graphical frame and a text
+;; terminal with the Emacs 31 child frame feature both work.  A terminal draws
+;; the frame border in one cell that sits outside the frame size, so the panel
+;; anchors and the frame fit count that cell, and the border takes the
+;; terminal's colours.
 ;;
 ;; Panels are independent: each has its own frame, Runtime and behaviour, and
 ;; several may be open at once.  A panel never changes the selected buffer; with
@@ -88,14 +92,16 @@
 ;;               colours.  Defaults: `etaf-posframe-border-width', the Theme's
 ;;               panel border, and its accent mixed into the panel surface
 ;;               with `etaf-posframe-border-focus-strength' or
-;;               `etaf-posframe-border-hover-strength'.
+;;               `etaf-posframe-border-hover-strength'.  A text terminal draws
+;;               one border cell in the terminal's colours, whatever W and the
+;;               colours ask for.
 ;;   :key        Identity of the panel.  Showing a View with a key that is
 ;;               already live replaces that panel; different keys keep their
 ;;               own frame, Runtime and position.
 ;;
 ;; Signal `etaf-posframe-error' for an unknown option, an invalid anchor or a
-;; non-graphical frame.  A failed show unmounts the View and deletes the frame
-;; before the error is re-signaled.
+;; display that cannot show child frames.  A failed show unmounts the View and
+;; deletes the frame before the error is re-signaled.
 ;;
 ;; Function: etaf-posframe-hide (&optional panel)
 ;;;###autoload (autoload 'etaf-posframe-hide "etaf-posframe" nil t)
@@ -206,7 +212,9 @@
 ;; Hide the panels while Emacs is not the active application.  A child frame is
 ;; a window of its own, so a window manager that lists windows (macOS Mission
 ;; Control) would offer the panel as a target and clicking it activates Emacs
-;; instead of the application behind it.  Default t.
+;; instead of the application behind it.  Default t.  It applies to graphical
+;; frames only: a terminal frame is not listed as a window and its panels are
+;; always visible.
 ;;
 ;; Variable: etaf-posframe-focus-follows-mouse
 ;; Move the input focus to a panel the mouse pointer rests on, so hovering shows
@@ -230,7 +238,9 @@
 ;;
 ;; Variable: etaf-posframe-border-width
 ;; Frame border width in pixels, 0..19, used when `:border' has no `:width'.
-;; Default 1.
+;; Default 1.  A text terminal draws the border in one cell, so a wider request
+;; keeps a one-cell border, and the border takes the terminal's default
+;; foreground colour because terminal frames have no per-frame border face.
 ;;
 ;; Variable: etaf-posframe-border-focus-strength
 ;; How much of the Theme accent a focused border shows, 0 to 1.  Default 0.6;
@@ -808,6 +818,26 @@ With APP non-nil the registration keys are accepted as well."
                                (if (plist-get options :focusable) nil t))))
     options))
 
+(defun etaf-posframe--display-supported-p ()
+  "Return non-nil when this display can show a child frame.
+A graphical frame always can.  A text terminal can when Emacs was built with
+the TTY child frame implementation, which Emacs 31 provides as the feature
+`tty-child-frames'."
+  (or (display-graphic-p) (featurep 'tty-child-frames)))
+
+(defun etaf-posframe--terminal-bevel (frame)
+  "Return the cells a terminal child frame border adds around FRAME.
+A graphical frame paints its border outside the pixels `frame-pixel-width'
+reports, while a terminal draws it in cells that the frame size does not count.
+Anchoring a panel with the bare frame size would therefore cut its bottom and
+left border off the screen edge."
+  (let ((parent (and (frame-live-p frame) (frame-parent frame))))
+    (if (and parent
+             (not (display-graphic-p parent))
+             (> etaf-posframe-border-width 0))
+        2
+      0)))
+
 (defun etaf-posframe--rect (info kind)
   "Return (LEFT TOP RIGHT BOTTOM) pixels for anchor KIND.
 KIND is `frame' for the whole parent frame or `window' for the parent window's
@@ -817,14 +847,17 @@ text area."
              (edges (and (window-live-p window)
                          (window-inside-pixel-edges window))))
         (or edges (list 0 0 0 0)))
-    (let ((frame (plist-get info :parent-frame)))
-      (list 0 0
-            (or (plist-get info :parent-frame-width)
-                (and (frame-live-p frame) (frame-pixel-width frame))
-                0)
-            (or (plist-get info :parent-frame-height)
-                (and (frame-live-p frame) (frame-pixel-height frame))
-                0)))))
+    (let* ((frame (plist-get info :parent-frame))
+           ;; A terminal border sits outside the frame's own cells, so inset
+           ;; the anchors by it and let the frame size grow by the same amount.
+           (bevel (etaf-posframe--terminal-bevel (plist-get info :posframe)))
+           (width (or (plist-get info :parent-frame-width)
+                      (and (frame-live-p frame) (frame-pixel-width frame))
+                      0))
+           (height (or (plist-get info :parent-frame-height)
+                       (and (frame-live-p frame) (frame-pixel-height frame))
+                       0)))
+      (list bevel bevel (max 0 (- width bevel)) (max 0 (- height bevel))))))
 
 (defun etaf-posframe--anchor-position (info kind place)
   "Return the pixel position of PLACE inside KIND for INFO.
@@ -835,9 +868,14 @@ parent's scroll bar or window border."
          (top (nth 1 rect))
          (right (nth 2 rect))
          (bottom (nth 3 rect))
-         (width (or (plist-get info :posframe-width) 0))
-         (height (or (plist-get info :posframe-height) 0))
-         (margin (if (eq kind 'window) 4 8))
+         (bevel (etaf-posframe--terminal-bevel (plist-get info :posframe)))
+         (width (+ (or (plist-get info :posframe-width) 0) bevel))
+         (height (+ (or (plist-get info :posframe-height) 0) bevel))
+         ;; The margin is one character against a frame's edge and half of one
+         ;; against a window's text area.  A TTY reports one pixel per cell, so
+         ;; a literal pixel count would push a panel eight cells off the edge.
+         (cell (or (plist-get info :font-width) 8))
+         (margin (if (eq kind 'window) (max 1 (/ cell 2)) cell))
          (right-edge (max left (- right width margin)))
          (bottom-edge (max top (- bottom height margin)))
          (x (pcase place
@@ -862,12 +900,17 @@ parent's scroll bar or window border."
   "Poshandler of every symbol in `etaf-posframe--anchors'.")
 
 (defun etaf-posframe--frame-rect (frame)
-  "Return (X Y WIDTH HEIGHT) of FRAME in its parent's pixels."
+  "Return (X Y WIDTH HEIGHT) of FRAME in its parent's pixels.
+`frame-position' is the read side of the `set-frame-position' that placed the
+frame: a TTY child frame keeps its origin there and reports nil `left' and
+`top' parameters, which would stack every panel at the frame's top left."
   (when (frame-live-p frame)
-    (list (or (frame-parameter frame 'left) 0)
-          (or (frame-parameter frame 'top) 0)
-          (frame-pixel-width frame)
-          (frame-pixel-height frame))))
+    (let* ((position (frame-position frame))
+           (bevel (etaf-posframe--terminal-bevel frame)))
+      (list (or (car position) 0)
+            (or (cdr position) 0)
+            (+ (frame-pixel-width frame) bevel)
+            (+ (frame-pixel-height frame) bevel)))))
 
 (defun etaf-posframe--rect-overlap-p (a b)
   "Return non-nil when rectangles A and B, both (X Y WIDTH HEIGHT), overlap."
@@ -876,13 +919,22 @@ parent's scroll bar or window border."
        (< (nth 1 a) (+ (nth 1 b) (nth 3 b)))
        (> (+ (nth 1 a) (nth 3 a)) (nth 1 b))))
 
-(defun etaf-posframe--stack-clear-y (x y width height top bottom down others)
+(defun etaf-posframe--stack-gap (info)
+  "Return the cell gap between panels stacked through INFO.
+The package gap is in pixels; a terminal reports one pixel per cell, where six
+cells would read as a hole rather than a gap."
+  (if (> (etaf-posframe--terminal-bevel (plist-get info :posframe)) 0)
+      1
+    etaf-posframe--stack-gap))
+
+(defun etaf-posframe--stack-clear-y (x y width height top bottom down others info)
   "Return the Y nearest Y where a WIDTH by HEIGHT panel at X is clear.
 DOWN stacks the panel below every panel it meets and otherwise stacks it above
 them, keeping `etaf-posframe--stack-gap' between the frames.  OTHERS are the
 live panels as (X Y WIDTH HEIGHT).  Return nil when no such Y lies between TOP
 and BOTTOM."
   (let ((y y)
+        (gap (etaf-posframe--stack-gap info))
         (guard 0))
     (while (and (< guard 100)
                 (cl-some (lambda (other)
@@ -903,8 +955,8 @@ and BOTTOM."
                             (mapcar (lambda (other) (nth 1 other))
                                     blocking)))))
         (setq y (if down
-                    (+ edge etaf-posframe--stack-gap)
-                  (- edge etaf-posframe--stack-gap height)))
+                    (+ edge gap)
+                  (- edge gap height)))
         (cl-incf guard)))
     (and (>= y top)
          (<= (+ y height) bottom)
@@ -923,8 +975,9 @@ when the frame has no room left, never outside the frame."
       (let* ((position (funcall base info))
              (x0 (car position))
              (y0 (cdr position))
-             (width (or (plist-get info :posframe-width) 0))
-             (height (or (plist-get info :posframe-height) 0))
+             (bevel (etaf-posframe--terminal-bevel (plist-get info :posframe)))
+             (width (+ (or (plist-get info :posframe-width) 0) bevel))
+             (height (+ (or (plist-get info :posframe-height) 0) bevel))
              (frame-rect (etaf-posframe--rect info 'frame))
              (left (nth 0 frame-rect))
              (top (nth 1 frame-rect))
@@ -934,10 +987,10 @@ when the frame has no room left, never outside the frame."
                                           (etaf-posframe--panel-frame panel)))
                                        (etaf-posframe-panels)))))
         (or (cl-loop for column from 0 below 60
-                     for x = (- x0 (* column (+ width etaf-posframe--stack-gap)))
+                     for x = (- x0 (* column (+ width (etaf-posframe--stack-gap info))))
                      while (>= x left)
                      for y = (etaf-posframe--stack-clear-y
-                              x y0 width height top bottom down others)
+                              x y0 width height top bottom down others info)
                      when y return (cons x y))
             (cons x0 y0))))))
 
@@ -1116,24 +1169,44 @@ MODE adds the title-bar theme toggle over `etaf-posframe--theme-modes', as in
       ;; the keyboard.  The hover border reads the pointer from a timer instead.
       (setq-local track-mouse nil))))
 
+(defun etaf-posframe--clamp-terminal-poshandler (handler)
+  "Return HANDLER with its result kept inside a terminal frame.
+A terminal border takes a cell outside the frame size, so a poshandler that
+puts the frame origin at a screen edge (`point' at the first column, for
+example) would lose its left or top border."
+  (lambda (info)
+    (let ((position (funcall handler info))
+          (bevel (etaf-posframe--terminal-bevel (plist-get info :posframe))))
+      (if (zerop bevel)
+          position
+        (let ((width (+ (or (plist-get info :posframe-width) 0) bevel))
+              (height (+ (or (plist-get info :posframe-height) 0) bevel))
+              (parent-width (or (plist-get info :parent-frame-width) 0))
+              (parent-height (or (plist-get info :parent-frame-height) 0)))
+          (cons (max 1 (min (car position)
+                            (max 1 (- parent-width width 1))))
+                (max 1 (min (cdr position)
+                            (max 1 (- parent-height height 1))))))))))
+
 (defun etaf-posframe--placement-poshandler (placement options)
   "Return the poshandler for PLACEMENT with OPTIONS."
-  (let ((stack (plist-get options :stack)))
-    (pcase (car placement)
-      ('cells (etaf-posframe--cell-poshandler (cdr placement)))
-      ('pixels (lambda (_info) (cdr placement)))
-      ('function (cdr placement))
-      ('anchor
-       (if stack
-           (etaf-posframe--stacking-poshandler (cdr placement))
-         (etaf-posframe--poshandler (cdr placement))))
-      ('anchor+offset
-       (let* ((anchor (nth 1 placement))
-              (offset (cons (nth 2 placement) (nth 3 placement)))
-              (base (if stack
-                        (etaf-posframe--stacking-poshandler anchor)
-                      (etaf-posframe--poshandler anchor))))
-         (etaf-posframe--offset-poshandler base offset))))))
+  (etaf-posframe--clamp-terminal-poshandler
+   (let ((stack (plist-get options :stack)))
+     (pcase (car placement)
+       ('cells (etaf-posframe--cell-poshandler (cdr placement)))
+       ('pixels (lambda (_info) (cdr placement)))
+       ('function (cdr placement))
+       ('anchor
+        (if stack
+            (etaf-posframe--stacking-poshandler (cdr placement))
+          (etaf-posframe--poshandler (cdr placement))))
+       ('anchor+offset
+        (let* ((anchor (nth 1 placement))
+               (offset (cons (nth 2 placement) (nth 3 placement)))
+               (base (if stack
+                         (etaf-posframe--stacking-poshandler anchor)
+                       (etaf-posframe--poshandler anchor))))
+          (etaf-posframe--offset-poshandler base offset)))))))
 
 (defun etaf-posframe--frame-args (panel lines)
   "Return the `posframe-show' arguments for PANEL showing LINES of content."
@@ -1151,8 +1224,17 @@ MODE adds the title-bar theme toggle over `etaf-posframe--theme-modes', as in
            ;; Posframe writes `truncate-lines' from this key, so without it
            ;; the old rows wrap and the board scrambles until the fit runs.
            :lines-truncate t
-           :border-width (or (plist-get border :width)
-                             etaf-posframe-border-width)
+           :border-width (if (display-graphic-p)
+                             (or (plist-get border :width)
+                                 etaf-posframe-border-width)
+                           ;; A terminal draws a frame border one cell wide, so a
+                           ;; wider request keeps the border instead of the
+                           ;; exact width.
+                           (if (> (or (plist-get border :width)
+                                      etaf-posframe-border-width)
+                                  0)
+                               1
+                             0))
            :border-color (or (plist-get border :color)
                              (plist-get theme :ui-panel-border))
            :internal-border-width 0
@@ -1184,13 +1266,19 @@ would otherwise narrow the canvas and leave a scroll bar strip on the right."
     (etaf-runtime-refit runtime width nil)))
 
 (defun etaf-posframe--text-height (panel window)
-  "Return the pixel height of PANEL's rendered content in WINDOW."
+  "Return the pixel height of PANEL's rendered content in WINDOW.
+A terminal cell is one pixel, and `window-text-pixel-size' counts the header
+line there as one of the rows it measures.  Counting the buffer's text rows
+keeps the frame at header plus content instead of adding a blank row."
   (condition-case nil
       (with-current-buffer (etaf-posframe--panel-buffer panel)
         (save-excursion
           (goto-char (point-max))
           (skip-chars-backward " \t\n")
-          (cdr (window-text-pixel-size window nil (point) nil 10000 t))))
+          (if (display-graphic-p)
+              (cdr (window-text-pixel-size window nil (point) nil 10000 t))
+            (* (count-lines (point-min) (point))
+               (frame-char-height (window-frame window))))))
     (error nil)))
 
 (defun etaf-posframe--row-budget (panel)
@@ -1808,7 +1896,12 @@ described in the package Commentary."
          (budget (if (numberp height-spec)
                      height-spec
                    (round (/ (* parent-height (nth 1 height-spec)) char-height))))
-         (capacity (max 4 (floor (- parent-height 32) (float char-height))))
+         ;; Two rows stay free for the panel's border and the parent's mode
+         ;; line.  The margin is measured in cells, not in pixels: a TTY frame
+         ;; reports one pixel per cell, so a pixel count would cap a panel on a
+         ;; 40-row terminal at eight rows.
+         (capacity (max 4 (floor (- parent-height (* 2 char-height))
+                                 (float char-height))))
          (max-height (min budget capacity))
          (theme-spec (plist-get options :theme))
          (theme (if (memq theme-spec '(auto light dark))
@@ -1829,9 +1922,9 @@ described in the package Commentary."
          (options (plist-put options :pixel-width (* columns char-width)))
          (panel nil)
          buffer)
-    (unless (display-graphic-p)
+    (unless (etaf-posframe--display-supported-p)
       (signal 'etaf-posframe-error
-              (list "ETAF panels need a graphical frame")))
+              (list "ETAF panels need a graphical frame or a terminal with child frames")))
     ;; Only the same key replaces a panel: different keys keep their own
     ;; frame, Runtime and position, so several panels stay open at once.
     (when-let* ((previous (etaf-posframe--panel-for-key
@@ -2111,12 +2204,44 @@ non-nil when PANEL is live."
                            (ignore-errors (etaf-posframe--fit-now panel)))))
       t)))
 
+(defun etaf-posframe--terminal-refit (panel)
+  "Re-place PANEL in its terminal frame after the terminal changed size.
+A terminal resize changes the parent frame's columns and rows, while a child
+frame keeps the geometry it was created with.  Clamping the column count and
+the row budget to the new frame and running the poshandler again keeps the
+panel on screen at the anchor it was opened with."
+  (when (etaf-posframe-live-p panel)
+    (let* ((buffer (etaf-posframe--panel-buffer panel))
+           (parent (etaf-posframe--panel-parent-frame panel))
+           (options (etaf-posframe--panel-options panel))
+           (char (max 1 (frame-char-width parent)))
+           ;; One cell on each side stays free, so the frame border still fits.
+           (columns (max 1 (min (or (plist-get options :width) 1)
+                                (- (frame-width parent) 2))))
+           (budget (max 1 (min (etaf-posframe--row-budget panel)
+                               (- (frame-height parent) 2))))
+           (lines (max 1 (min (etaf-posframe--lines buffer) budget))))
+      (setf (etaf-posframe--panel-options panel)
+            (plist-put (plist-put (plist-put (copy-sequence options)
+                                             :width columns)
+                                  :pixel-width (* columns char))
+                       :height budget))
+      (apply #'posframe-show buffer
+             (etaf-posframe--frame-args panel lines))
+      (when-let* ((window (get-buffer-window buffer t)))
+        (etaf-posframe--fit-height panel window)))))
+
 (defun etaf-posframe--window-size-changed (frame)
   "Re-fit the panels FRAME hosts or the panel FRAME itself after a resize."
-  (dolist (panel (copy-sequence etaf-posframe--panels))
-    (when (or (eq (etaf-posframe--panel-parent-frame panel) frame)
-              (eq (etaf-posframe--panel-frame panel) frame))
-      (etaf-posframe-refresh panel))))
+  (let ((terminal (not (display-graphic-p frame))))
+    (dolist (panel (copy-sequence etaf-posframe--panels))
+      (cond
+       ((eq (etaf-posframe--panel-frame panel) frame)
+        (etaf-posframe-refresh panel))
+       ((eq (etaf-posframe--panel-parent-frame panel) frame)
+        (if terminal
+            (etaf-posframe--terminal-refit panel)
+          (etaf-posframe-refresh panel)))))))
 
 (defun etaf-posframe-panel-theme (panel)
   "Return PANEL's current Theme plist, or nil when it is not live."
