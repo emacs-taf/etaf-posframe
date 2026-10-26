@@ -11,6 +11,7 @@ import argparse
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,7 +86,7 @@ def strip_ansi(text):
 
 def main():
     args = parse_args()
-    if not shutil_which("tmux"):
+    if not shutil.which("tmux"):
         print("tty acceptance needs tmux", file=sys.stderr)
         return 2
     root = Path(args.root).resolve()
@@ -142,17 +143,10 @@ def main():
         return 1
     if int(ran.group(1)) == 0:
         print("tty acceptance ran no tests", file=sys.stderr)
+        shutil.rmtree(workspace, ignore_errors=True)
         return 2
+    shutil.rmtree(workspace, ignore_errors=True)
     return 0
-
-
-def shutil_which(name):
-    path = os.environ.get("PATH", "")
-    for directory in path.split(os.pathsep):
-        candidate = Path(directory) / name
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-    return None
 
 
 if __name__ == "__main__":
