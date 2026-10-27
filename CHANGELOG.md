@@ -9,8 +9,11 @@
   changes its width with `C-<left>' and `C-<right>' and its height with
   `C-<up>' and `C-<down>', and `k' forwards the next key to the panel.
   `etaf-posframe-move', `etaf-posframe-resize' and `etaf-posframe-send-key'
-  are the same three operations as commands.  A moved panel keeps its place and
-  a resized one keeps its width and row budget through later refreshes.
+  are the same three operations as commands.  The arrow keys stay live after
+  the first press, so one prefix reaches a run of moves and a held key repeats
+  it; any other key ends the run.  A moved panel keeps its place and a resized
+  one keeps its width and row budget through later refreshes, and a panel stops
+  at its parent frame's edge instead of leaving the screen.
 
 ## 0.3.0
 

@@ -167,8 +167,12 @@ applications with, `C-c e` in the example setup):
 | `C-up`, `C-down` | shorten or heighten the panel one row |
 | `k`, then a key | run that key in the panel, for the keys the View declares |
 
-Every one of them takes the panel of the selected frame, else the most recent
-panel, so a prefix command works while the keyboard sits in an ordinary buffer.
+The arrow keys keep working after the first press: `C-c e`, then `right`, then
+`right` again moves the same panel twice, and a held key repeats it.  Any other
+key ends that run.  A panel stays inside its parent frame, so a run stops at the
+edge.  Every one of them takes the panel of the selected frame, else the most
+recent panel, so a prefix command works while the keyboard sits in an ordinary
+buffer.
 `etaf-posframe-move`, `etaf-posframe-resize` and `etaf-posframe-send-key` are
 the same three operations as commands, and the first two prompt instead of
 reading an arrow key.

@@ -2346,8 +2346,15 @@ keyboard nor the mouse."
            (dx (pcase direction ('left (- steps)) ('right steps) (_ 0)))
            (dy (pcase direction ('up (- steps)) ('down steps) (_ 0)))
            (position (frame-position frame))
-           (x (max 0 (+ (or (car-safe position) 0) dx)))
-           (y (max 0 (+ (or (cdr-safe position) 0) dy))))
+           (parent (etaf-posframe--panel-parent-frame panel))
+           (parent-width (if (frame-live-p parent) (frame-pixel-width parent) 0))
+           (parent-height (if (frame-live-p parent) (frame-pixel-height parent) 0))
+           ;; A panel stays inside its parent frame, so a run of moves cannot
+           ;; push it off screen where only part of it would be reachable.
+           (x (max 0 (min (+ (or (car-safe position) 0) dx)
+                          (max 0 (- parent-width (frame-pixel-width frame))))))
+           (y (max 0 (min (+ (or (cdr-safe position) 0) dy)
+                          (max 0 (- parent-height (frame-pixel-height frame)))))))
       (set-frame-position frame x y)
       (etaf-posframe--pin-position panel x y)
       panel)))
@@ -2437,6 +2444,35 @@ can use the whole panel vocabulary without the registry listing it again."
       (signal 'etaf-posframe-error
               (list (format "Application %s is not registered" id)))))
 
+(defvar etaf-posframe--nudge-map nil
+  "Keys that keep moving or resizing a panel while the prefix stays active.
+`etaf-posframe--nudge' installs it as a transient map, so the arrow keys keep
+working until a key it does not bind ends the run.")
+
+(defun etaf-posframe--nudge (direction)
+  "Move the target panel DIRECTION and keep the arrow keys nudging it.
+The map stays active until a key it does not bind is pressed, so one prefix
+reaches a run of moves instead of stopping after one cell."
+  (etaf-posframe-move direction)
+  (set-transient-map etaf-posframe--nudge-map t))
+
+(defun etaf-posframe--nudge-resize (axis)
+  "Change the target panel's size along AXIS and keep the keys nudging it."
+  (etaf-posframe-resize axis)
+  (set-transient-map etaf-posframe--nudge-map t))
+
+(setq etaf-posframe--nudge-map
+      (let ((map (make-sparse-keymap)))
+        (define-key map [left] (lambda () (interactive) (etaf-posframe--nudge 'left)))
+        (define-key map [right] (lambda () (interactive) (etaf-posframe--nudge 'right)))
+        (define-key map [up] (lambda () (interactive) (etaf-posframe--nudge 'up)))
+        (define-key map [down] (lambda () (interactive) (etaf-posframe--nudge 'down)))
+        (define-key map [C-left] (lambda () (interactive) (etaf-posframe--nudge-resize 'narrower)))
+        (define-key map [C-right] (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
+        (define-key map [C-up] (lambda () (interactive) (etaf-posframe--nudge-resize 'shorter)))
+        (define-key map [C-down] (lambda () (interactive) (etaf-posframe--nudge-resize 'taller)))
+        map))
+
 (defun etaf-posframe--app-keymap ()
   "Return a keymap binding every registered application `:key'."
   (let ((map (make-sparse-keymap)))
@@ -2448,14 +2484,16 @@ can use the whole panel vocabulary without the registry listing it again."
                       (lambda () (interactive) (etaf-posframe-app id))))))
     ;; The panel's place and keys are reached from the buffer the user is in:
     ;; a text terminal gives a child frame neither the keyboard nor the mouse.
-    (define-key map [left] (lambda () (interactive) (etaf-posframe-move 'left)))
-    (define-key map [right] (lambda () (interactive) (etaf-posframe-move 'right)))
-    (define-key map [up] (lambda () (interactive) (etaf-posframe-move 'up)))
-    (define-key map [down] (lambda () (interactive) (etaf-posframe-move 'down)))
-    (define-key map [C-left] (lambda () (interactive) (etaf-posframe-resize 'narrower)))
-    (define-key map [C-right] (lambda () (interactive) (etaf-posframe-resize 'wider)))
-    (define-key map [C-up] (lambda () (interactive) (etaf-posframe-resize 'shorter)))
-    (define-key map [C-down] (lambda () (interactive) (etaf-posframe-resize 'taller)))
+    ;; Each of these also installs `etaf-posframe--nudge-map', so the next
+    ;; arrow presses move the same panel without the prefix again.
+    (define-key map [left] (lambda () (interactive) (etaf-posframe--nudge 'left)))
+    (define-key map [right] (lambda () (interactive) (etaf-posframe--nudge 'right)))
+    (define-key map [up] (lambda () (interactive) (etaf-posframe--nudge 'up)))
+    (define-key map [down] (lambda () (interactive) (etaf-posframe--nudge 'down)))
+    (define-key map [C-left] (lambda () (interactive) (etaf-posframe--nudge-resize 'narrower)))
+    (define-key map [C-right] (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
+    (define-key map [C-up] (lambda () (interactive) (etaf-posframe--nudge-resize 'shorter)))
+    (define-key map [C-down] (lambda () (interactive) (etaf-posframe--nudge-resize 'taller)))
     (define-key map (kbd "k") #'etaf-posframe-send-key)
     map))
 
