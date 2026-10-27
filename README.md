@@ -162,10 +162,16 @@ applications with, `C-c e` in the example setup):
 
 | Key after the prefix | What it does |
 | --- | --- |
-| `left`, `right`, `up`, `down` | move the panel one cell |
-| `C-left`, `C-right` | narrow or widen the panel one column |
-| `C-up`, `C-down` | shorten or heighten the panel one row |
+| `left`, `right`, `up`, `down` | move the panel `etaf-posframe-move-step` cells (3 by default) |
+| `=`, `+` | widen the panel |
+| `-` | narrow it |
+| `>`, `<` | heighten or shorten it |
 | `k`, then a key | run that key in the panel, for the keys the View declares |
+
+`etaf-posframe-move-step` (3) and `etaf-posframe-resize-step` (1) are the
+defaults; `M-x etaf-posframe-move` and `M-x etaf-posframe-resize` take a count
+with a prefix argument.  Control plus an arrow is deliberately not used: on
+macOS the window manager switches desktop spaces before Emacs sees the key.
 
 The arrow keys keep working after the first press: `C-c e`, then `right`, then
 `right` again moves the same panel twice, and a held key repeats it.  Any other

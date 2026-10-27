@@ -176,10 +176,11 @@
 ;; Read one key and open the registered application bound to it.  Bind this once,
 ;; for example to (kbd "C-c p"), and every registration's `:key' works without
 ;; the caller rebuilding a keymap.  The same prefix carries the panel controls:
-;; the arrow keys move the panel, `C-<left>' and `C-<right>' narrow or widen it,
-;; `C-<up>' and `C-<down>' shorten or heighten it, and `k' forwards the next
-;; key to the panel.  Those four controls are what a text terminal has, because
-;; a child frame there takes neither the keyboard nor the mouse.
+;; the arrow keys move the panel, `=' and `-' widen or narrow it, `>' and `<'
+;; heighten or shorten it, and `k' forwards the next key to the panel.  The
+;; arrow keys stay live after the first press, so one prefix reaches a run of
+;; moves.  Those controls are what a text terminal has, because a child frame
+;; there takes neither the keyboard nor the mouse.
 ;;
 ;; Function: etaf-posframe-move (direction &optional steps panel)
 ;;;###autoload (autoload 'etaf-posframe-move "etaf-posframe" nil t)
@@ -234,6 +235,15 @@
 ;;
 ;; Variable: etaf-posframe-default-max-height
 ;; Maximum content lines of a new panel when `:height' is absent.
+;;
+;; Variable: etaf-posframe-move-step
+;; Character cells `etaf-posframe-move' moves when it gets no step count, 3.
+;; One step is one character, so a graphical frame moves by its character width
+;; and height and a terminal by its single cell.
+;;
+;; Variable: etaf-posframe-resize-step
+;; Columns or rows `etaf-posframe-resize' changes when it gets no step count,
+;; 1.  Raise it to reach a wanted size in fewer presses.
 ;;
 ;; Variable: etaf-posframe-hide-inactive
 ;; Hide the panels while Emacs is not the active application.  A child frame is
@@ -317,6 +327,22 @@
 
 (defcustom etaf-posframe-default-max-height 30
   "Maximum content lines of a panel without :height."
+  :type 'integer
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-move-step 3
+  "Cells a panel moves per `etaf-posframe-move' without an explicit count.
+One cell is one character: a graphical frame moves by the frame's character
+width and height, a terminal by its single cell.  The default moves a panel
+far enough to see one press and still lets a held arrow key stop where the
+user means."
+  :type 'integer
+  :group 'etaf-posframe)
+
+(defcustom etaf-posframe-resize-step 1
+  "Columns or rows a panel changes per `etaf-posframe-resize'.
+The default changes one cell, which keeps a narrow panel from overshooting
+its frame; raise it to reach a wanted width in fewer presses."
   :type 'integer
   :group 'etaf-posframe)
 
@@ -2330,21 +2356,25 @@ The height becomes the panel's row budget, which is why it is kept through
 
 ;;;###autoload
 (defun etaf-posframe-move (direction &optional steps panel)
-  "Move PANEL STEPS cells in DIRECTION.
-DIRECTION is `left', `right', `up' or `down'; STEPS defaults to 1.  The panel
-keeps the new place through later refreshes.  A text terminal reaches this
-from the app prefix map, because a child frame there takes neither the
-keyboard nor the mouse."
+  "Move PANEL STEPS character cells in DIRECTION.
+DIRECTION is `left', `right', `up' or `down'.  STEPS defaults to
+`etaf-posframe-move-step'; one step is one character, so a graphical frame
+moves by its character width and height and a terminal by its single cell.
+The panel keeps the new place through later refreshes.  A text terminal
+reaches this from the app prefix map, because a child frame there takes
+neither the keyboard nor the mouse."
   (interactive
    (list (intern (completing-read "方向: " '("left" "right" "up" "down") nil t))
-         (prefix-numeric-value current-prefix-arg)))
+         (and current-prefix-arg (prefix-numeric-value current-prefix-arg))))
   (let* ((panel (or panel (etaf-posframe--app-target)))
          (frame (and panel (etaf-posframe-panel-frame panel))))
     (unless (frame-live-p frame)
       (signal 'etaf-posframe-error (list "No live ETAF panel to move")))
-    (let* ((steps (or steps 1))
-           (dx (pcase direction ('left (- steps)) ('right steps) (_ 0)))
-           (dy (pcase direction ('up (- steps)) ('down steps) (_ 0)))
+    (let* ((steps (or steps etaf-posframe-move-step))
+           (cell-width (max 1 (frame-char-width frame)))
+           (cell-height (max 1 (frame-char-height frame)))
+           (dx (* cell-width (pcase direction ('left (- steps)) ('right steps) (_ 0))))
+           (dy (* cell-height (pcase direction ('up (- steps)) ('down steps) (_ 0))))
            (position (frame-position frame))
            (parent (etaf-posframe--panel-parent-frame panel))
            (parent-width (if (frame-live-p parent) (frame-pixel-width parent) 0))
@@ -2362,16 +2392,17 @@ keyboard nor the mouse."
 ;;;###autoload
 (defun etaf-posframe-resize (axis &optional steps panel)
   "Change PANEL's size by STEPS cells along AXIS.
-AXIS is `wider', `narrower', `taller' or `shorter'; STEPS defaults to 1.  The
-panel keeps its new width and row budget through later refreshes."
+AXIS is `wider', `narrower', `taller' or `shorter'.  STEPS defaults to
+`etaf-posframe-resize-step'.  The panel keeps its new width and row budget
+through later refreshes."
   (interactive
    (list (intern (completing-read "方向: " '("wider" "narrower" "taller" "shorter") nil t))
-         (prefix-numeric-value current-prefix-arg)))
+         (and current-prefix-arg (prefix-numeric-value current-prefix-arg))))
   (let* ((panel (or panel (etaf-posframe--app-target)))
          (frame (and panel (etaf-posframe-panel-frame panel))))
     (unless (frame-live-p frame)
       (signal 'etaf-posframe-error (list "No live ETAF panel to resize")))
-    (let* ((steps (or steps 1))
+    (let* ((steps (or steps etaf-posframe-resize-step))
            (dw (pcase axis ('wider steps) ('narrower (- steps)) (_ 0)))
            (dh (pcase axis ('taller steps) ('shorter (- steps)) (_ 0)))
            (width (max 4 (+ (frame-width frame) dw)))
@@ -2467,10 +2498,15 @@ reaches a run of moves instead of stopping after one cell."
         (define-key map [right] (lambda () (interactive) (etaf-posframe--nudge 'right)))
         (define-key map [up] (lambda () (interactive) (etaf-posframe--nudge 'up)))
         (define-key map [down] (lambda () (interactive) (etaf-posframe--nudge 'down)))
-        (define-key map [C-left] (lambda () (interactive) (etaf-posframe--nudge-resize 'narrower)))
-        (define-key map [C-right] (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
-        (define-key map [C-up] (lambda () (interactive) (etaf-posframe--nudge-resize 'shorter)))
-        (define-key map [C-down] (lambda () (interactive) (etaf-posframe--nudge-resize 'taller)))
+        ;; Control plus an arrow is a desktop shortcut on macOS: the window
+        ;; manager switches spaces before Emacs sees the key.  Plain `=' and
+        ;; `-' size the width, `>' and '<' the height, and every terminal sends
+        ;; them.
+        (define-key map (kbd "=") (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
+        (define-key map (kbd "+") (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
+        (define-key map (kbd "-") (lambda () (interactive) (etaf-posframe--nudge-resize 'narrower)))
+        (define-key map (kbd ">") (lambda () (interactive) (etaf-posframe--nudge-resize 'taller)))
+        (define-key map (kbd "<") (lambda () (interactive) (etaf-posframe--nudge-resize 'shorter)))
         map))
 
 (defun etaf-posframe--app-keymap ()
@@ -2490,10 +2526,11 @@ reaches a run of moves instead of stopping after one cell."
     (define-key map [right] (lambda () (interactive) (etaf-posframe--nudge 'right)))
     (define-key map [up] (lambda () (interactive) (etaf-posframe--nudge 'up)))
     (define-key map [down] (lambda () (interactive) (etaf-posframe--nudge 'down)))
-    (define-key map [C-left] (lambda () (interactive) (etaf-posframe--nudge-resize 'narrower)))
-    (define-key map [C-right] (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
-    (define-key map [C-up] (lambda () (interactive) (etaf-posframe--nudge-resize 'shorter)))
-    (define-key map [C-down] (lambda () (interactive) (etaf-posframe--nudge-resize 'taller)))
+    (define-key map (kbd "=") (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
+    (define-key map (kbd "+") (lambda () (interactive) (etaf-posframe--nudge-resize 'wider)))
+    (define-key map (kbd "-") (lambda () (interactive) (etaf-posframe--nudge-resize 'narrower)))
+    (define-key map (kbd ">") (lambda () (interactive) (etaf-posframe--nudge-resize 'taller)))
+    (define-key map (kbd "<") (lambda () (interactive) (etaf-posframe--nudge-resize 'shorter)))
     (define-key map (kbd "k") #'etaf-posframe-send-key)
     map))
 

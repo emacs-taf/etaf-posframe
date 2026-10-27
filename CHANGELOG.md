@@ -6,14 +6,18 @@
 
 - Panels can be placed and resized from the keyboard, which is how a text
   terminal reaches them: the app prefix map moves a panel with the arrow keys,
-  changes its width with `C-<left>' and `C-<right>' and its height with
-  `C-<up>' and `C-<down>', and `k' forwards the next key to the panel.
+  widens it with `=' or `+', narrows it with `-', and heightens or shortens it
+  with `>' or `<'; `k' forwards the next key to the panel.
   `etaf-posframe-move', `etaf-posframe-resize' and `etaf-posframe-send-key'
   are the same three operations as commands.  The arrow keys stay live after
   the first press, so one prefix reaches a run of moves and a held key repeats
   it; any other key ends the run.  A moved panel keeps its place and a resized
   one keeps its width and row budget through later refreshes, and a panel stops
   at its parent frame's edge instead of leaving the screen.
+- `etaf-posframe-move-step` (3) and `etaf-posframe-resize-step` (1) set the
+  default step of those two commands.  A move counts character cells, so a
+  graphical frame moves by its character width and a terminal by its single
+  cell, and no longer by one pixel per press.
 
 ## 0.3.0
 
