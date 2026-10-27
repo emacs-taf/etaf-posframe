@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- Panels can be placed and resized from the keyboard, which is how a text
+  terminal reaches them: the app prefix map moves a panel with the arrow keys,
+  changes its width with `C-<left>' and `C-<right>' and its height with
+  `C-<up>' and `C-<down>', and `k' forwards the next key to the panel.
+  `etaf-posframe-move', `etaf-posframe-resize' and `etaf-posframe-send-key'
+  are the same three operations as commands.  A moved panel keeps its place and
+  a resized one keeps its width and row budget through later refreshes.
+
 ## 0.3.0
 
 ### Added

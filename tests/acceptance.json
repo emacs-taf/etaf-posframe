@@ -310,6 +310,11 @@
    "name": "etaf-posframe-tty-hide-releases-the-frame",
    "file": "tests/etaf-posframe-tests.el",
    "purpose": "Hiding a terminal panel deletes its frame and releases its Runtime."
+  },
+  {
+   "name": "etaf-posframe-tty-move-keeps-the-place",
+   "file": "tests/etaf-posframe-tests.el",
+   "purpose": "Moving a terminal panel keeps its new place through a refresh."
   }
  ]
 }

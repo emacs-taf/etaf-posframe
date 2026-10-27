@@ -153,6 +153,32 @@ package archive once released, or add this checkout to `load-path`:
 (add-to-list 'load-path "/path/to/etaf-posframe")
 ```
 
+## Panels on a text terminal
+
+Emacs 31 draws child frames on a text terminal, so the same panels work in
+`emacs -nw`.  A terminal child frame takes neither the keyboard nor the mouse,
+so a terminal reaches a panel through the app prefix map (the map you bind the
+applications with, `C-c e` in the example setup):
+
+| Key after the prefix | What it does |
+| --- | --- |
+| `left`, `right`, `up`, `down` | move the panel one cell |
+| `C-left`, `C-right` | narrow or widen the panel one column |
+| `C-up`, `C-down` | shorten or heighten the panel one row |
+| `k`, then a key | run that key in the panel, for the keys the View declares |
+
+Every one of them takes the panel of the selected frame, else the most recent
+panel, so a prefix command works while the keyboard sits in an ordinary buffer.
+`etaf-posframe-move`, `etaf-posframe-resize` and `etaf-posframe-send-key` are
+the same three operations as commands, and the first two prompt instead of
+reading an arrow key.
+
+A terminal cannot focus a child frame, so a control that needs the keyboard on
+one row (a button reached through Tab) stays a graphical-frame feature.  A
+terminal panel therefore suits a View whose keys are declared on the Host: the
+player's `SPC`, `p` and `n` work through `k`, while clicking its buttons does
+not.
+
 ## Checks
 
 ```sh

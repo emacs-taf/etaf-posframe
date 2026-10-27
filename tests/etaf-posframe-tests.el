@@ -1618,5 +1618,26 @@ The batch runner has no terminal, so these cases skip there and run under
     (should-not (frame-live-p frame))
     (should-not (etaf-posframe-panels))))
 
+(ert-deftest etaf-posframe-tty-move-keeps-the-place ()
+  "Moving a terminal panel keeps the new place through a refresh."
+  (skip-unless (etaf-posframe-test--tty-p))
+  (let* ((view (etaf-view (text "move")))
+         (panel (etaf-posframe-show view :at 'frame-top-left :width 20 :height 3
+                                    :key 'tty-move :auto-hide nil)))
+    (unwind-protect
+        (progn
+          (etaf-posframe-test--settle 0.2)
+          (let* ((frame (etaf-posframe-panel-frame panel))
+                 (start (frame-position frame)))
+            (etaf-posframe-move 'right 2 panel)
+            (etaf-posframe-move 'down 1 panel)
+            (should (= (+ (car start) 2) (car (frame-position frame))))
+            (should (= (+ (cdr start) 1) (cdr (frame-position frame))))
+            (etaf-posframe-refresh panel)
+            (etaf-posframe-test--settle 0.2)
+            (should (= (+ (car start) 2) (car (frame-position frame))))
+            (should (= (+ (cdr start) 1) (cdr (frame-position frame))))))
+      (etaf-posframe-hide panel))))
+
 (provide 'etaf-posframe-tests)
 ;;; etaf-posframe-tests.el ends here

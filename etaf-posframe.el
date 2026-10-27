@@ -175,7 +175,34 @@
 ;;;###autoload (autoload 'etaf-posframe-app-prefix "etaf-posframe" nil t)
 ;; Read one key and open the registered application bound to it.  Bind this once,
 ;; for example to (kbd "C-c p"), and every registration's `:key' works without
-;; the caller rebuilding a keymap.
+;; the caller rebuilding a keymap.  The same prefix carries the panel controls:
+;; the arrow keys move the panel, `C-<left>' and `C-<right>' narrow or widen it,
+;; `C-<up>' and `C-<down>' shorten or heighten it, and `k' forwards the next
+;; key to the panel.  Those four controls are what a text terminal has, because
+;; a child frame there takes neither the keyboard nor the mouse.
+;;
+;; Function: etaf-posframe-move (direction &optional steps panel)
+;;;###autoload (autoload 'etaf-posframe-move "etaf-posframe" nil t)
+;; Move PANEL STEPS cells in DIRECTION (`left', `right', `up' or `down'; STEPS
+;; defaults to 1) and keep that place through later refreshes.  PANEL defaults
+;; to the panel of the selected frame, else the most recent one.  Interactively
+;; it prompts for the direction.  Signals `etaf-posframe-error' when no live
+;; panel is available.
+;;
+;; Function: etaf-posframe-resize (axis &optional steps panel)
+;;;###autoload (autoload 'etaf-posframe-resize "etaf-posframe" nil t)
+;; Change PANEL's size by STEPS cells along AXIS (`wider', `narrower', `taller'
+;; or `shorter'; STEPS defaults to 1).  The new width and row budget survive
+;; later refreshes because the size becomes the panel's `:fill-height' budget.
+;; PANEL defaults as for `etaf-posframe-move'.
+;;
+;; Function: etaf-posframe-send-key (&optional panel)
+;;;###autoload (autoload 'etaf-posframe-send-key "etaf-posframe" nil t)
+;; Read one key sequence and run it with PANEL's buffer current.  This reaches
+;; the panel's own keys from an ordinary buffer, which is the only route a text
+;; terminal has.  A key the View declares runs there; a control that needs the
+;; keyboard focus on one row, such as a button reached through Tab, still needs
+;; a graphical frame.  Signals `etaf-posframe-error' without a live panel.
 ;;
 ;; Variable: etaf-posframe-apps
 ;; Registered applications as (ID . PLIST) records, in registration order.
@@ -2275,6 +2302,98 @@ panel on screen at the anchor it was opened with."
   "Return the live panels, most recent first."
   (cl-remove-if-not #'etaf-posframe-live-p etaf-posframe--panels))
 
+;;; Panel input
+
+(defun etaf-posframe--app-target ()
+  "Return the panel the app prefix commands act on.
+The panel of the selected frame comes first, then the most recent panel, so a
+prefix command can nudge a panel while the keyboard sits in an ordinary buffer:
+a text terminal cannot give a child frame the keyboard or the mouse."
+  (or (etaf-posframe--panel-for-frame (selected-frame))
+      (car (etaf-posframe-panels))))
+
+(defun etaf-posframe--pin-position (panel x y)
+  "Make (X . Y) PANEL's anchor, so a later refresh keeps that place."
+  (setf (etaf-posframe--panel-options panel)
+        (plist-put (copy-sequence (etaf-posframe--panel-options panel))
+                   :at (cons 'pixels (cons x y)))))
+
+(defun etaf-posframe--pin-size (panel width height)
+  "Record WIDTH by HEIGHT as PANEL's size, so later refreshes keep it.
+The height becomes the panel's row budget, which is why it is kept through
+`:fill-height'."
+  (setf (etaf-posframe--panel-options panel)
+        (plist-put (plist-put (plist-put (copy-sequence (etaf-posframe--panel-options panel))
+                                         :width width)
+                              :height height)
+                   :fill-height t)))
+
+;;;###autoload
+(defun etaf-posframe-move (direction &optional steps panel)
+  "Move PANEL STEPS cells in DIRECTION.
+DIRECTION is `left', `right', `up' or `down'; STEPS defaults to 1.  The panel
+keeps the new place through later refreshes.  A text terminal reaches this
+from the app prefix map, because a child frame there takes neither the
+keyboard nor the mouse."
+  (interactive
+   (list (intern (completing-read "方向: " '("left" "right" "up" "down") nil t))
+         (prefix-numeric-value current-prefix-arg)))
+  (let* ((panel (or panel (etaf-posframe--app-target)))
+         (frame (and panel (etaf-posframe-panel-frame panel))))
+    (unless (frame-live-p frame)
+      (signal 'etaf-posframe-error (list "No live ETAF panel to move")))
+    (let* ((steps (or steps 1))
+           (dx (pcase direction ('left (- steps)) ('right steps) (_ 0)))
+           (dy (pcase direction ('up (- steps)) ('down steps) (_ 0)))
+           (position (frame-position frame))
+           (x (max 0 (+ (or (car-safe position) 0) dx)))
+           (y (max 0 (+ (or (cdr-safe position) 0) dy))))
+      (set-frame-position frame x y)
+      (etaf-posframe--pin-position panel x y)
+      panel)))
+
+;;;###autoload
+(defun etaf-posframe-resize (axis &optional steps panel)
+  "Change PANEL's size by STEPS cells along AXIS.
+AXIS is `wider', `narrower', `taller' or `shorter'; STEPS defaults to 1.  The
+panel keeps its new width and row budget through later refreshes."
+  (interactive
+   (list (intern (completing-read "方向: " '("wider" "narrower" "taller" "shorter") nil t))
+         (prefix-numeric-value current-prefix-arg)))
+  (let* ((panel (or panel (etaf-posframe--app-target)))
+         (frame (and panel (etaf-posframe-panel-frame panel))))
+    (unless (frame-live-p frame)
+      (signal 'etaf-posframe-error (list "No live ETAF panel to resize")))
+    (let* ((steps (or steps 1))
+           (dw (pcase axis ('wider steps) ('narrower (- steps)) (_ 0)))
+           (dh (pcase axis ('taller steps) ('shorter (- steps)) (_ 0)))
+           (width (max 4 (+ (frame-width frame) dw)))
+           (height (max 2 (+ (frame-height frame) dh))))
+      ;; Record the size first: the frame's own size change runs a refresh
+      ;; that would otherwise put the old width back.
+      (etaf-posframe--pin-size panel width height)
+      (set-frame-size frame width height)
+      (etaf-posframe-refresh panel)
+      panel)))
+
+;;;###autoload
+(defun etaf-posframe-send-key (&optional panel)
+  "Read one key sequence and run it in PANEL's View.
+A text terminal cannot give a child frame the keyboard, so this is how the
+panel's own keys are reached: the key runs with the panel's buffer current.
+A key the View declares runs there; a control that needs the keyboard focus on
+a particular row, such as a button reached through Tab, still needs a
+graphical frame.  Return the key sequence that ran."
+  (interactive)
+  (let* ((panel (or panel (etaf-posframe--app-target)))
+         (buffer (and panel (etaf-posframe--panel-buffer panel))))
+    (unless (buffer-live-p buffer)
+      (signal 'etaf-posframe-error (list "No live ETAF panel to send a key to")))
+    (let ((keys (read-key-sequence-vector "面板按键: ")))
+      (with-current-buffer buffer
+        (execute-kbd-macro keys))
+      keys)))
+
 ;;; Applications
 
 (defcustom etaf-posframe-app-repeat-delay 0.3
@@ -2327,6 +2446,17 @@ can use the whole panel vocabulary without the registry listing it again."
         (when shortcut
           (define-key map (kbd shortcut)
                       (lambda () (interactive) (etaf-posframe-app id))))))
+    ;; The panel's place and keys are reached from the buffer the user is in:
+    ;; a text terminal gives a child frame neither the keyboard nor the mouse.
+    (define-key map [left] (lambda () (interactive) (etaf-posframe-move 'left)))
+    (define-key map [right] (lambda () (interactive) (etaf-posframe-move 'right)))
+    (define-key map [up] (lambda () (interactive) (etaf-posframe-move 'up)))
+    (define-key map [down] (lambda () (interactive) (etaf-posframe-move 'down)))
+    (define-key map [C-left] (lambda () (interactive) (etaf-posframe-resize 'narrower)))
+    (define-key map [C-right] (lambda () (interactive) (etaf-posframe-resize 'wider)))
+    (define-key map [C-up] (lambda () (interactive) (etaf-posframe-resize 'shorter)))
+    (define-key map [C-down] (lambda () (interactive) (etaf-posframe-resize 'taller)))
+    (define-key map (kbd "k") #'etaf-posframe-send-key)
     map))
 
 ;;;###autoload
